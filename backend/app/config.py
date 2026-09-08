@@ -1,9 +1,15 @@
 import json
 import os
+import shutil
 from pathlib import Path
 
 APP_DIR = Path(os.environ.get("IMAGEVIEWER_DATA", str(Path.home() / ".imageviewer")))
 APP_DIR.mkdir(parents=True, exist_ok=True)
+
+# ffmpeg / ffprobe: honour explicit paths (IIS app-pool identities often lack a
+# useful PATH), else fall back to whatever is on PATH, else the bare name.
+FFMPEG = os.environ.get("FFMPEG_BINARY") or shutil.which("ffmpeg") or "ffmpeg"
+FFPROBE = os.environ.get("FFPROBE_BINARY") or shutil.which("ffprobe") or "ffprobe"
 
 DB_PATH = APP_DIR / "library.db"
 THUMB_DIR = APP_DIR / "thumbnails"

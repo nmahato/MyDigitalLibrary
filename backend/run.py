@@ -1,9 +1,19 @@
 import os
+import sys
 
-import uvicorn
+# Make `app` importable regardless of the current working directory
+# (IIS HttpPlatformHandler starts us with cwd = the site's physical path).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import uvicorn  # noqa: E402
 
 if __name__ == "__main__":
-    port = int(os.environ.get("IMAGEVIEWER_PORT", "8077"))
+    # HTTP_PLATFORM_PORT is injected by IIS HttpPlatformHandler; fall back to our own.
+    port = int(
+        os.environ.get("HTTP_PLATFORM_PORT")
+        or os.environ.get("IMAGEVIEWER_PORT", "8077")
+    )
+    host = os.environ.get("IMAGEVIEWER_HOST", "127.0.0.1")
     reload = bool(os.environ.get("DEV"))
 
     # Opt-in remote debugging: set DEBUGPY=1 and use the
@@ -13,7 +23,7 @@ if __name__ == "__main__":
 
         debugpy.listen(("127.0.0.1", 5678))
         if os.environ.get("DEBUGPY_WAIT"):
-            print("debugpy: waiting for the debugger to attach on :5678 …")
+            print("debugpy: waiting for the debugger to attach on :5678 ...")
             debugpy.wait_for_client()
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=port, reload=reload)
+    uvicorn.run("app.main:app", host=host, port=port, reload=reload)

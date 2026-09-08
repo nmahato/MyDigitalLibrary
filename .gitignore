@@ -18,3 +18,8 @@ backend/.imageviewer/
 scratch/
 .DS_Store
 Thumbs.db
+
+# IIS deployment (machine-specific)
+deploy/web.config
+deploy/logs/
+deploy/data/

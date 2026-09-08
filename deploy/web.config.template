@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  IIS site for PhotoLibrary Viewer.
+
+  Requires the HttpPlatformHandler module (https://www.iis.net/downloads/microsoft/httpplatformhandler).
+  IIS starts the uvicorn process, injects HTTP_PLATFORM_PORT, and reverse-proxies
+  every request to it. FastAPI serves both the API and the built frontend.
+
+  This is a TEMPLATE. Deploy-ToIIS.ps1 copies it to web.config (which is
+  git-ignored) with the absolute paths / PHOTO_LIBRARY rewritten for this machine.
+  To deploy by hand: copy to web.config and edit the values yourself.
+-->
+<configuration>
+  <system.webServer>
+    <handlers>
+      <add name="httpPlatformHandler" path="*" verb="*"
+           modules="httpPlatformHandler" resourceType="Unspecified" />
+    </handlers>
+
+    <httpPlatform processPath="C:\Personal\projects\ImageViewer\backend\.venv\Scripts\python.exe"
+                  arguments="C:\Personal\projects\ImageViewer\backend\run.py"
+                  stdoutLogEnabled="true"
+                  stdoutLogFile="C:\Personal\projects\ImageViewer\deploy\logs\stdout"
+                  startupTimeLimit="120"
+                  startupRetryCount="2"
+                  requestTimeout="00:20:00"
+                  processesPerApplication="1">
+      <environmentVariables>
+        <environmentVariable name="IMAGEVIEWER_HOST" value="127.0.0.1" />
+        <environmentVariable name="PYTHONUNBUFFERED" value="1" />
+        <environmentVariable name="PYTHONPATH" value="C:\Personal\projects\ImageViewer\backend" />
+        <environmentVariable name="PHOTO_LIBRARY" value="D:\PhotoLibrary" />
+        <environmentVariable name="IMAGEVIEWER_DATA" value="C:\Personal\projects\ImageViewer\deploy\data" />
+        <!-- Set these if ffmpeg/ffprobe are not on the machine PATH: -->
+        <!-- <environmentVariable name="FFMPEG_BINARY"  value="C:\ffmpeg\bin\ffmpeg.exe" /> -->
+        <!-- <environmentVariable name="FFPROBE_BINARY" value="C:\ffmpeg\bin\ffprobe.exe" /> -->
+      </environmentVariables>
+    </httpPlatform>
+
+    <!-- large media streams straight through -->
+    <security>
+      <requestFiltering>
+        <requestLimits maxAllowedContentLength="4294967295" />
+      </requestFiltering>
+    </security>
+
+    <httpProtocol>
+      <customHeaders>
+        <remove name="X-Powered-By" />
+      </customHeaders>
+    </httpProtocol>
+  </system.webServer>
+</configuration>

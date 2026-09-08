@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from ..config import FFPROBE
 from . import imaging  # noqa: F401  (configures Pillow: HEIC + truncated images)
 
 _DT_TAGS = (36867, 36868, 306)  # DateTimeOriginal, DateTimeDigitized, DateTime
@@ -96,7 +97,7 @@ def extract_video(path: str) -> dict:
     }
     try:
         proc = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-analyzeduration", "5M", "-probesize", "20M",
+            [FFPROBE, "-v", "quiet", "-analyzeduration", "5M", "-probesize", "20M",
              "-print_format", "json", "-show_format", "-show_streams", path],
             capture_output=True, text=True, timeout=30,
         )

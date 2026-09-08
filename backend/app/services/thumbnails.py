@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageOps
 
-from ..config import THUMB_DIR
+from ..config import FFMPEG, THUMB_DIR
 from . import imaging  # noqa: F401  (configures Pillow)
 
 THUMB_SIZE = 512
@@ -53,7 +53,7 @@ def _image_thumb(src: str, dst: Path):
 
 
 def _video_thumb(src: str, dst: Path):
-    base = ["ffmpeg", "-y", "-loglevel", "error", "-threads", "1"]
+    base = [FFMPEG, "-y", "-loglevel", "error", "-threads", "1"]
     tail = ["-frames:v", "1", "-an", "-sn", "-vf", f"scale={THUMB_SIZE}:-2", str(dst)]
     subprocess.run(base + ["-ss", "1", "-i", src] + tail,
                    capture_output=True, timeout=60)
