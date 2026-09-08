@@ -74,7 +74,7 @@ if ($portOwner) {
   $ours = $false
   if (Test-Path "IIS:\Sites\$SiteName") {
     $b = (Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue).bindingInformation
-    if ($b -and $b -match ":$Port`:") { $ours = $true }
+    if ($b -and $b -match ":${Port}:") { $ours = $true }
   }
   if (-not $ours) {
     throw "Port $Port is already in use (PID $($portOwner.OwningProcess | Select-Object -First 1)). Pick another with -Port."
