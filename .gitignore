@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# App data / local
+*.db
+*.db-wal
+*.db-shm
+.imageviewer/
+backend/.imageviewer/
+scratch/
+.DS_Store
+Thumbs.db

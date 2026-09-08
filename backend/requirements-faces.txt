@@ -1,0 +1,5 @@
+# Optional: on-device face detection + recognition.
+# These ship large binary wheels and may lag new Python releases.
+insightface>=0.7.3
+onnxruntime>=1.17
+scikit-learn>=1.4
