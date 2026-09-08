@@ -6,7 +6,7 @@ import Lightbox from "./Lightbox.jsx";
 
 const PAGE = 120;
 
-export default function Gallery() {
+export default function Gallery({ status }) {
   const notify = useToast();
   const [filters, setFilters] = useState({
     sort: "date",
@@ -25,6 +25,19 @@ export default function Gallery() {
   useEffect(() => {
     api.people().then(setPeople).catch(() => {});
   }, [lightboxIdx]);
+
+  // refresh the grid once a background scan finishes
+  const scanRunning = !!status?.scan?.running;
+  const prevScanRunning = useRef(scanRunning);
+  useEffect(() => {
+    if (prevScanRunning.current && !scanRunning) {
+      setItems([]);
+      load(true);
+      api.people().then(setPeople).catch(() => {});
+    }
+    prevScanRunning.current = scanRunning;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanRunning]);
 
   const load = useCallback(
     async (reset) => {
@@ -143,7 +156,19 @@ export default function Gallery() {
         {loading && <p className="muted">Loading…</p>}
         {!loading && items.length === 0 && (
           <p className="muted">
-            No media. Try <b>Rescan</b> or adjust filters.
+            {scanRunning ? (
+              <>
+                Indexing library… {status.scan.done}/{status.scan.total || "?"} scanned.
+                Photos appear here when the scan finishes.
+              </>
+            ) : (status?.counts?.total ?? 0) === 0 ? (
+              <>
+                Nothing indexed yet. Click <b>Rescan</b> (top right) to index{" "}
+                <code>{status?.settings?.library_path}</code>.
+              </>
+            ) : (
+              <>No media matches these filters.</>
+            )}
           </p>
         )}
       </div>

@@ -21,12 +21,14 @@ export default function SettingsPanel({ status, onSaved }) {
       near_duplicate_threshold: Number(form.near_duplicate_threshold),
       geocode: form.geocode,
       nominatim_email: form.nominatim_email,
+      scan_workers: Number(form.scan_workers),
     });
     notify("Settings saved");
     onSaved?.();
   };
 
   const c = status?.counts || {};
+  const scan = status?.scan;
 
   return (
     <div className="content" style={{ maxWidth: 620 }}>
@@ -46,6 +48,21 @@ export default function SettingsPanel({ status, onSaved }) {
           {c.total || 0} items · {humanBytes(c.bytes)} · {c.earliest?.slice(0, 10) || "?"} →{" "}
           {c.latest?.slice(0, 10) || "?"}
         </p>
+        <div className="field">
+          <label>Scan workers (parallelism): {form.scan_workers}</label>
+          <input
+            type="range"
+            min="1"
+            max="16"
+            value={form.scan_workers}
+            onChange={(e) => set("scan_workers", e.target.value)}
+            style={{ width: "100%" }}
+          />
+          <p className="muted">
+            Higher = faster scans/imports on multi-core machines; very high values can
+            thrash a single spinning disk.
+          </p>
+        </div>
         <div className="row">
           <button onClick={() => api.scan(false).then(() => notify("Quick rescan started"))}>
             Quick rescan
@@ -54,6 +71,33 @@ export default function SettingsPanel({ status, onSaved }) {
             Full re-index
           </button>
         </div>
+
+        {scan && scan.phase !== "idle" && (
+          <div style={{ marginTop: 12, fontSize: 13 }}>
+            <div className="row">
+              <span className="pill">
+                {scan.running ? `${scan.phase} ${scan.done}/${scan.total}` : `last scan: ${scan.phase}`}
+              </span>
+              <span className="pill">+{scan.added} added</span>
+              <span className="pill">{scan.updated} updated</span>
+              <span className="pill">{scan.removed} removed</span>
+              <span className="pill" style={scan.errors ? { color: "var(--danger)" } : {}}>
+                {scan.errors} unreadable
+              </span>
+            </div>
+            {scan.error_samples?.length > 0 && (
+              <details style={{ marginTop: 6 }}>
+                <summary className="muted">
+                  {scan.errors} file(s) could not be read (indexed with a placeholder)
+                </summary>
+                <pre style={{ maxHeight: 160, overflow: "auto", fontSize: 12,
+                              background: "var(--bg)", padding: 8, borderRadius: 8 }}>
+                  {scan.error_samples.join("\n")}
+                </pre>
+              </details>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card">

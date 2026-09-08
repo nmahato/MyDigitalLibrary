@@ -96,8 +96,8 @@ def extract_video(path: str) -> dict:
     }
     try:
         proc = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", "-show_streams", path],
+            ["ffprobe", "-v", "quiet", "-analyzeduration", "5M", "-probesize", "20M",
+             "-print_format", "json", "-show_format", "-show_streams", path],
             capture_output=True, text=True, timeout=30,
         )
         data = json.loads(proc.stdout or "{}")

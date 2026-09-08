@@ -24,6 +24,24 @@ def media_type(ext: str) -> str | None:
     return None
 
 
+def sniff_media_type(path: Path, fallback: str | None) -> str | None:
+    """Trust file contents over the extension (iPhone often saves .MOV as .JPG)."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except OSError:
+        return fallback
+    if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"qt  ", b"isom", b"mp42", b"M4V ", b"3gp5", b"avc1"):
+            return "video"
+    if head[:3] == b"\xff\xd8\xff" or head[:8] == b"\x89PNG\r\n\x1a\n" \
+            or head[:6] in (b"GIF87a", b"GIF89a") \
+            or (head[:4] == b"RIFF" and head[8:12] == b"WEBP"):
+        return "image"
+    return fallback
+
+
 def list_media(root: Path) -> list[Path]:
     return [p for p in root.rglob("*") if p.is_file() and media_type(p.suffix)]
 
@@ -32,8 +50,13 @@ def build_fields(p: Path, st) -> tuple[dict, str]:
     """Extract every column value for a media file. Returns (fields, media_type)."""
     root = library_path()
     ext = p.suffix.lower()
-    mtype = media_type(ext)
-    meta = exif.extract_video(str(p)) if mtype == "video" else exif.extract_image(str(p))
+    mtype = sniff_media_type(p, media_type(ext)) or "image"
+
+    try:
+        meta = (exif.extract_video(str(p)) if mtype == "video"
+                else exif.extract_image(str(p)))
+    except Exception:
+        meta = {}  # unreadable / corrupt — still index the file so it's visible
 
     taken_at = meta.get("taken_at")
     date_source = "exif"
@@ -60,6 +83,11 @@ def build_fields(p: Path, st) -> tuple[dict, str]:
             ph = None
 
     try:
+        sha = sha256_file(str(p))
+    except OSError:
+        sha = None
+
+    try:
         rel = str(p.relative_to(root))
     except ValueError:
         rel = p.name
@@ -83,7 +111,7 @@ def build_fields(p: Path, st) -> tuple[dict, str]:
         "gps_lon": meta.get("gps_lon"),
         "location": location,
         "orientation": meta.get("orientation", 1),
-        "sha256": sha256_file(str(p)),
+        "sha256": sha,
         "phash": ph,
         "indexed_at": datetime.now().isoformat(),
     }

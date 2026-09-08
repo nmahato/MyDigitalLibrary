@@ -23,12 +23,15 @@ VIDEO_EXTS = {
 }
 ALL_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
+_DEFAULT_WORKERS = min(8, (os.cpu_count() or 4) * 2)
+
 _DEFAULTS = {
     "library_path": DEFAULT_LIBRARY,
     "import_mode": "copy",              # copy | move
     "near_duplicate_threshold": 8,      # max hamming distance for perceptual hash
     "geocode": "offline",              # offline | off | nominatim
     "nominatim_email": "",
+    "scan_workers": _DEFAULT_WORKERS,   # parallel workers for library scan / import
 }
 
 

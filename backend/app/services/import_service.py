@@ -25,9 +25,12 @@ def _safe_name(s: str) -> str:
 
 
 def _target_for(src: Path, root: Path) -> Path:
-    mtype = indexer.media_type(src.suffix)
-    meta = (exif.extract_video(str(src)) if mtype == "video"
-            else exif.extract_image(str(src)))
+    mtype = indexer.sniff_media_type(src, indexer.media_type(src.suffix)) or "image"
+    try:
+        meta = (exif.extract_video(str(src)) if mtype == "video"
+                else exif.extract_image(str(src)))
+    except Exception:
+        meta = {}
 
     taken = meta.get("taken_at") or exif.date_from_filename(src.name)
     try:

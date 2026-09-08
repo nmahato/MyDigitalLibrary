@@ -111,6 +111,7 @@ class Settings(BaseModel):
     near_duplicate_threshold: int
     geocode: str
     nominatim_email: str = ""
+    scan_workers: int = 4
 
 
 class SettingsPatch(BaseModel):
@@ -119,6 +120,7 @@ class SettingsPatch(BaseModel):
     near_duplicate_threshold: int | None = None
     geocode: str | None = None
     nominatim_email: str | None = None
+    scan_workers: int | None = None
 
 
 class ScanRequest(BaseModel):

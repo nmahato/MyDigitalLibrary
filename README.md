@@ -70,6 +70,13 @@ For a single-process deployment: `npm run build`, then the backend serves
 2. **Settings → Rescan library** to index `D:\PhotoLibrary`.
 3. (Optional) **People → Detect faces** to build face clusters.
 
+The first scan hashes every file and builds a thumbnail, so it takes a while on a
+large library — progress shows in the top bar, and photos appear as soon as it
+finishes. It runs in parallel (tune **Settings → Scan workers**). Corrupt or
+truncated files (common with interrupted phone transfers) are indexed anyway with
+a placeholder thumbnail and listed under **Settings → last scan**, so you can find
+and delete them.
+
 ## Debugging (VS Code)
 
 `.vscode/` ships launch configs and tasks:
