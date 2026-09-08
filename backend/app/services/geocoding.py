@@ -4,7 +4,7 @@ import urllib.parse
 import urllib.request
 
 from ..config import load_settings
-from ..database import get_conn
+from ..repositories import geocode as geo_repo
 
 _rg = None
 _rg_tried = False
@@ -33,8 +33,7 @@ def _offline_lookup(lat: float, lon: float):
 
 def _nominatim_lookup(lat: float, lon: float, email: str):
     params = urllib.parse.urlencode({
-        "lat": lat, "lon": lon, "format": "jsonv2", "zoom": "10",
-        "email": email or "",
+        "lat": lat, "lon": lon, "format": "jsonv2", "zoom": "10", "email": email or "",
     })
     req = urllib.request.Request(
         f"https://nominatim.openstreetmap.org/reverse?{params}",
@@ -63,10 +62,9 @@ def label_for(lat, lon):
         return None
 
     key = f"{round(lat, 3)},{round(lon, 3)}"
-    with get_conn() as conn:
-        row = conn.execute("SELECT label FROM geocode_cache WHERE key=?", (key,)).fetchone()
-        if row:
-            return row["label"]
+    cached = geo_repo.get_cached(key)
+    if cached is not None:
+        return cached
 
     label = None
     if mode == "nominatim":
@@ -74,9 +72,5 @@ def label_for(lat, lon):
     if label is None:
         label = _offline_lookup(lat, lon)
 
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO geocode_cache(key, label) VALUES (?, ?)",
-            (key, label),
-        )
+    geo_repo.put_cached(key, label)
     return label

@@ -1,10 +1,12 @@
 """Image format conversion / resizing."""
+from datetime import datetime
 from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from ..database import get_conn
-from . import imaging  # noqa: F401  (configures Pillow)
+from ..core import BadRequest, NotFound
+from ..repositories import photos as photo_repo
+from . import imaging  # noqa: F401
 from .hashing import phash, sha256_file
 from .thumbnails import ensure_thumb
 
@@ -15,20 +17,19 @@ _FORMATS = {
 }
 
 
-def convert_photo(photo_id: int, *, target: str, max_dimension: int | None = None,
-                  quality: int = 90, keep_exif: bool = True,
-                  overwrite: bool = False) -> dict:
+def convert(photo_id: int, *, target: str, max_dimension: int | None = None,
+            quality: int = 90, keep_exif: bool = True,
+            overwrite: bool = False) -> dict:
     target = target.lower()
     if target not in _FORMATS:
-        raise ValueError(f"unsupported target format: {target}")
+        raise BadRequest(f"unsupported target format: {target}")
     pil_fmt, ext = _FORMATS[target]
 
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM photos WHERE id=?", (photo_id,)).fetchone()
+    row = photo_repo.get(photo_id)
     if not row:
-        raise ValueError("photo not found")
+        raise NotFound("photo not found")
     if row["media_type"] != "image":
-        raise ValueError("only images can be converted")
+        raise BadRequest("only images can be converted")
 
     src = Path(row["path"])
     with Image.open(src) as im:
@@ -51,28 +52,23 @@ def convert_photo(photo_id: int, *, target: str, max_dimension: int | None = Non
         src.unlink()
 
     st = dst.stat()
-    with Image.open(dst) as im2:
-        ph = phash(im2)
-        w, h = im2.size
-    sha = sha256_file(str(dst))
+    with Image.open(dst) as reopened:
+        ph = phash(reopened)
+        w, h = reopened.size
 
-    from datetime import datetime
-    with get_conn() as conn:
-        if overwrite:
-            conn.execute(
-                """UPDATE photos SET path=?, filename=?, ext=?, size_bytes=?,
-                   width=?, height=?, sha256=?, phash=?, orientation=1, indexed_at=?
-                   WHERE id=?""",
-                (str(dst), dst.name, ext.lstrip("."), st.st_size, w, h, sha, ph,
-                 datetime.now().isoformat(), photo_id),
-            )
-            ensure_thumb(photo_id, str(dst), "image", force=True)
-            new_id = photo_id
-        else:
-            new_id = None  # picked up on next rescan
+    new_id = None
+    if overwrite:
+        photo_repo.apply_conversion(photo_id, {
+            "path": str(dst), "filename": dst.name, "ext": ext.lstrip("."),
+            "size_bytes": st.st_size, "width": w, "height": h,
+            "sha256": sha256_file(str(dst)), "phash": ph, "orientation": 1,
+            "indexed_at": datetime.now().isoformat(),
+        })
+        ensure_thumb(photo_id, str(dst), "image", force=True)
+        new_id = photo_id
 
-    return {"output": str(dst), "size_bytes": st.st_size, "photo_id": new_id,
-            "replaced": overwrite}
+    return {"output": str(dst), "size_bytes": st.st_size,
+            "photo_id": new_id, "replaced": overwrite}
 
 
 def _free_name(path: Path) -> Path:

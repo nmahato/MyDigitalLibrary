@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -5,10 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .core import install_error_handlers
 from .database import init_db
 from .routers import convert, duplicates, imports, library, people, photos
 
-app = FastAPI(title="PhotoLibrary Viewer")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="PhotoLibrary Viewer", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,17 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(photos.router)
-app.include_router(library.router)
-app.include_router(people.router)
-app.include_router(duplicates.router)
-app.include_router(imports.router)
-app.include_router(convert.router)
+install_error_handlers(app)
 
-
-@app.on_event("startup")
-def _startup():
-    init_db()
+for module in (photos, library, people, duplicates, imports, convert):
+    app.include_router(module.router)
 
 
 @app.get("/api/health")
@@ -46,6 +48,4 @@ if _DIST.exists():
     @app.get("/{full_path:path}")
     def _spa(full_path: str):
         target = _DIST / full_path
-        if target.is_file():
-            return FileResponse(target)
-        return FileResponse(_DIST / "index.html")
+        return FileResponse(target if target.is_file() else _DIST / "index.html")

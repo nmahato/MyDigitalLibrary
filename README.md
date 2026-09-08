@@ -25,6 +25,10 @@ backend/    FastAPI + SQLite. Scans the library, stores metadata, serves media &
 frontend/   React + Vite single-page app.
 ```
 
+The backend is layered **routers → services → repositories → database**, with
+Pydantic DTOs in `schemas.py` and domain errors in `core/`. See
+[backend/ARCHITECTURE.md](backend/ARCHITECTURE.md).
+
 ## Setup
 
 ### Backend

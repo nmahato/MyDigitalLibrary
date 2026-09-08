@@ -1,33 +1,25 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
 
-from ..services import importer
+from ..core import BadRequest
+from ..schemas import ImportPlan, ImportRunRequest, JobStarted, SourceRequest
+from ..services import import_service
 
 router = APIRouter(prefix="/api", tags=["import"])
 
 
-class SourceBody(BaseModel):
-    source: str
+@router.post("/import/plan", response_model=ImportPlan)
+def plan(body: SourceRequest):
+    result = import_service.plan(body.source)
+    if "error" in result:
+        raise BadRequest(result["error"])
+    return result
 
 
-@router.post("/import/plan")
-def plan(body: SourceBody):
-    return importer.plan(body.source)
-
-
-class RunBody(BaseModel):
-    source: str
-    dry_run: bool = False
-
-
-@router.post("/import/run")
-def run(body: RunBody):
-    if importer.is_running():
-        return {"started": False, "reason": "already running"}
-    importer.start_import(body.source, body.dry_run)
-    return {"started": True}
+@router.post("/import/run", response_model=JobStarted)
+def run(body: ImportRunRequest):
+    return import_service.start(body.source, body.dry_run)
 
 
 @router.get("/import/status")
 def import_status():
-    return importer.PROGRESS
+    return import_service.PROGRESS
