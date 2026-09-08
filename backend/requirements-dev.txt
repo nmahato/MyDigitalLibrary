@@ -1,0 +1,3 @@
+# Debugging / dev tooling
+debugpy>=1.8
+httpx>=0.27          # for FastAPI TestClient

@@ -66,6 +66,21 @@ For a single-process deployment: `npm run build`, then the backend serves
 2. **Settings → Rescan library** to index `D:\PhotoLibrary`.
 3. (Optional) **People → Detect faces** to build face clusters.
 
+## Debugging (VS Code)
+
+`.vscode/` ships launch configs and tasks:
+
+| Config | Use |
+|--------|-----|
+| **Backend: FastAPI (debug)** | Runs uvicorn under debugpy, no reload — breakpoints work everywhere. |
+| **Backend: FastAPI (auto-reload …)** | `run.py` with `DEV=1`; reload on save, breakpoints only in the reloader process. |
+| **Backend: current file** | Debug the open `.py` (e.g. poke at a service module directly). |
+| **Backend: attach to running process** | Start the server yourself with `DEBUGPY=1 python run.py`, then attach on `:5678`. Add `DEBUGPY_WAIT=1` to pause until the debugger connects. |
+| **Frontend: Chrome / Edge** | Launches the browser against the Vite dev server (auto-starts it) with source maps into `frontend/src`. |
+| **Full stack (backend + Chrome)** | Compound — starts both. |
+
+Install the debug tooling once: `pip install -r requirements-dev.txt` in the backend venv.
+
 ## Configuration
 
 Environment variables (or edit `~/.imageviewer/settings.json`):
