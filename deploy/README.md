@@ -136,7 +136,7 @@ Check with `Get-NetTCPConnection -State Listen -LocalPort 8099`.
 ## Remove
 
 ```powershell
-.\Remove-FromIIS.ps1        # drops the site + pool, keeps deploy\data and your photos
+.\Uninstall-FromIIS.ps1     # drops the site + pool + NTFS grants, keeps deploy\data and your photos
 ```
 
 ## Alternative: IIS serves static, proxies only the API
