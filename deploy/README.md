@@ -20,7 +20,24 @@ browser ──▶ IIS  (site "PhotoLibrary", port 8090)
 | **HttpPlatformHandler** | <https://www.iis.net/downloads/microsoft/httpplatformhandler> — install the x64 MSI. This is the piece that runs Python. |
 | Python 3.11+ | On PATH, to build the backend venv. |
 | Node.js 18+ | On PATH, to build the frontend. |
-| ffmpeg + ffprobe | On the **machine** PATH (System, not just your user), or set `FFMPEG_BINARY` / `FFPROBE_BINARY` in `web.config.template`. IIS app-pool identities don't get your user PATH. |
+| ffmpeg + ffprobe | On PATH when you deploy. The script bakes the resolved absolute paths into `web.config`. |
+
+### Per-user Python / ffmpeg
+
+If Python or ffmpeg are installed **for your user only** (under
+`C:\Users\<you>\AppData\...` — the Python install-manager and `winget` both do
+this), the default IIS `ApplicationPoolIdentity` cannot read them ("Access is
+denied" in `logs\stdout*.log`). Two ways through, both handled by the script:
+
+* **Recommended — run the pool as your account:**
+  `.\Deploy-ToIIS.ps1 -Port 9090 -PoolUser "$env:COMPUTERNAME\$env:USERNAME"`
+  It prompts for your Windows password (stored DPAPI-encrypted in IIS config) and
+  grants "Log on as a batch job". Deletes then go to *your* Recycle Bin and
+  everything under your profile just works.
+* **Default — grant read-in:** without `-PoolUser`, the script grants the pool
+  identity read/execute on the base-Python and ffmpeg folders plus traverse on the
+  `C:\Users\<you>\...` path to reach them. Works, but breaks if those tools move
+  (a Python or ffmpeg update); re-run the script to re-grant.
 
 ## Deploy
 
@@ -83,8 +100,15 @@ decisions. Deleting it just forces a rescan.
 ## Troubleshooting
 
 **502.3 / "process failed to start"** — check `deploy\logs\stdout*.log`.
-Usually: wrong `processPath` (venv missing), or `run.py` can't import `app`
-(check `PYTHONPATH` in `web.config`).
+Usually one of:
+- `Access is denied` for a `...\AppData\Local\Python\...` path — per-user Python;
+  see "Per-user Python / ffmpeg" above (use `-PoolUser`, or re-run to re-grant).
+- wrong `processPath` (venv missing) — re-run with `-Build`.
+- `run.py` can't import `app` — check `PYTHONPATH` in `web.config`.
+
+**Pool keeps stopping ("disabled")** — 5 fast startup failures disable it. Fix the
+cause above; the script sets `rapidFailProtection=false` and calls
+`Start-WebAppPool`, so a re-run revives it.
 
 **Blank page but `/api/health` works** — frontend not built. Run with `-Build`.
 
