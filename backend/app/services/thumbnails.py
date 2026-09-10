@@ -14,10 +14,18 @@ def thumb_file(photo_id: int) -> Path:
     return THUMB_DIR / f"{photo_id}.webp"
 
 
+def _good(p: Path) -> bool:
+    try:
+        return p.is_file() and p.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def ensure_thumb(photo_id: int, src_path: str, media_type: str, force: bool = False) -> Path | None:
     dst = thumb_file(photo_id)
-    if dst.exists() and not force:
+    if _good(dst) and not force:
         return dst
+    dst.unlink(missing_ok=True)  # clear a stale 0-byte file
     try:
         if media_type == "video":
             _video_thumb(src_path, dst)
@@ -25,9 +33,10 @@ def ensure_thumb(photo_id: int, src_path: str, media_type: str, force: bool = Fa
             _image_thumb(src_path, dst)
     except Exception:
         pass
-    if not dst.exists():
+    if not _good(dst):
+        dst.unlink(missing_ok=True)
         _placeholder(dst, Path(src_path).suffix.lstrip(".").upper() or "FILE")
-    return dst if dst.exists() else None
+    return dst if _good(dst) else None
 
 
 def _placeholder(dst: Path, label: str):
@@ -53,9 +62,19 @@ def _image_thumb(src: str, dst: Path):
 
 
 def _video_thumb(src: str, dst: Path):
+    # Extract a frame to JPEG with ffmpeg, then let PIL make the webp thumb.
+    # (ffmpeg's native .webp output uses the animated-webp encoder, which fails
+    #  with "WebPAnimEncoderAssemble ... Cannot allocate memory" on many files.)
+    tmp = dst.with_name(dst.stem + ".frame.jpg")
     base = [FFMPEG, "-y", "-loglevel", "error", "-threads", "1"]
-    tail = ["-frames:v", "1", "-an", "-sn", "-vf", f"scale={THUMB_SIZE}:-2", str(dst)]
-    subprocess.run(base + ["-ss", "1", "-i", src] + tail,
-                   capture_output=True, timeout=60)
-    if not dst.exists():  # very short clip: grab the first frame
-        subprocess.run(base + ["-i", src] + tail, capture_output=True, timeout=60)
+    tail = ["-frames:v", "1", "-an", "-sn", "-vf",
+            f"scale='min({THUMB_SIZE},iw)':-2", "-q:v", "3", str(tmp)]
+    try:
+        subprocess.run(base + ["-ss", "1", "-i", src] + tail,
+                       capture_output=True, timeout=60)
+        if not _good(tmp):  # very short clip: grab the first frame
+            subprocess.run(base + ["-i", src] + tail, capture_output=True, timeout=60)
+        if _good(tmp):
+            _image_thumb(str(tmp), dst)
+    finally:
+        tmp.unlink(missing_ok=True)
