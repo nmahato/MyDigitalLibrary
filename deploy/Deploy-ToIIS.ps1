@@ -40,6 +40,7 @@ param(
   [string]$PoolUser        = "",          # e.g. "MACHINE\me" — pool runs as this account
   [string]$PoolPassword    = "",          # omit to be prompted securely
   [switch]$DeepLibraryAcl,                # one-time recursive ACL over the whole library
+  [switch]$WithFaces,                     # also install the on-device face engine
   [switch]$Build
 )
 
@@ -170,6 +171,19 @@ if ($Build -or -not (Test-Path (Join-Path $venvDir "Lib\site-packages\fastapi"))
   Write-Host "installing backend requirements..."
   & $venvPy -m pip install --disable-pip-version-check -q --upgrade pip
   & $venvPy -m pip install --disable-pip-version-check -q -r (Join-Path $backendDir "requirements.txt")
+}
+if ($WithFaces -and -not (Test-Path (Join-Path $venvDir "Lib\site-packages\insightface"))) {
+  Write-Host "installing face engine (large)..."
+  & $venvPy -m pip install --disable-pip-version-check -q -r (Join-Path $backendDir "requirements-faces.txt")
+}
+# seed the face model next to the DB if a user copy already exists (avoids re-download)
+$userModel = Join-Path $env:USERPROFILE ".insightface\models\buffalo_l"
+$appModel  = Join-Path $dataDir "insightface\models\buffalo_l"
+if ((Test-Path (Join-Path $userModel "det_10g.onnx")) -and
+    -not (Test-Path (Join-Path $appModel "det_10g.onnx"))) {
+  New-Item -ItemType Directory -Force -Path $appModel | Out-Null
+  Copy-Item "$userModel\*.onnx" $appModel
+  Write-Host "  copied face model -> $appModel"
 }
 
 # --- 2. frontend build ----------------------------------------------

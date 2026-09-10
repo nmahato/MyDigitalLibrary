@@ -1,9 +1,17 @@
 from fastapi import APIRouter
 
-from ..schemas import JobStarted, LibraryStatus, ScanRequest, Settings, SettingsPatch
+from ..repositories import photos as photo_repo
+from ..schemas import (
+    FolderNode, JobStarted, LibraryStatus, ScanRequest, Settings, SettingsPatch,
+)
 from ..services import library_service
 
 router = APIRouter(prefix="/api", tags=["library"])
+
+
+@router.get("/library/folders", response_model=list[FolderNode])
+def folders():
+    return photo_repo.folder_tree()
 
 
 @router.get("/library/status", response_model=LibraryStatus)

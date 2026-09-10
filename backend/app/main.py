@@ -8,7 +8,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import install_error_handlers
 from .database import init_db
-from .routers import convert, duplicates, imports, library, people, photos
+from .routers import (
+    albums, convert, duplicates, imports, library, people, photos, tags,
+)
 
 
 @asynccontextmanager
@@ -28,7 +30,7 @@ app.add_middleware(
 
 install_error_handlers(app)
 
-for module in (photos, library, people, duplicates, imports, convert):
+for module in (photos, library, people, albums, tags, duplicates, imports, convert):
     app.include_router(module.router)
 
 

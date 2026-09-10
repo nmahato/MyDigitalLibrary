@@ -1,12 +1,22 @@
 """On-device face detection + clustering. Degrades gracefully without InsightFace."""
+import ssl
 import threading
+import urllib.request
+import zipfile
 from datetime import datetime
 
 import numpy as np
 from PIL import Image, ImageOps
 
+from ..config import INSIGHTFACE_ROOT
 from ..repositories import people as people_repo
 from . import imaging  # noqa: F401
+
+_MODEL = "buffalo_l"
+_MODEL_URL = (
+    "https://github.com/deepinsight/insightface/releases/download/"
+    "model-zoo/buffalo_l.zip"
+)
 
 PROGRESS = {"running": False, "phase": "idle", "total": 0, "done": 0,
             "faces_found": 0, "finished_at": None}
@@ -19,6 +29,32 @@ def available() -> bool:
     return _try_load() is not None
 
 
+def _ensure_model() -> None:
+    """Make sure the model bundle exists under INSIGHTFACE_ROOT/models/<name>."""
+    dest = INSIGHTFACE_ROOT / "models" / _MODEL
+    if (dest / "det_10g.onnx").exists():
+        return
+    dest.mkdir(parents=True, exist_ok=True)
+    zip_path = INSIGHTFACE_ROOT / "models" / f"{_MODEL}.zip"
+    ctx = ssl.create_default_context()
+    try:  # first try verified, then fall back (corporate MITM certs, etc.)
+        _download(_MODEL_URL, zip_path, ctx)
+    except Exception:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        _download(_MODEL_URL, zip_path, ctx)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(dest)
+    zip_path.unlink(missing_ok=True)
+
+
+def _download(url: str, path, ctx) -> None:
+    req = urllib.request.Request(url, headers={"User-Agent": "PhotoLibraryViewer"})
+    with urllib.request.urlopen(req, context=ctx, timeout=120) as r, open(path, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+
+
 def _try_load():
     global _app, _load_error
     if _app is not None:
@@ -28,7 +64,8 @@ def _try_load():
     try:
         from insightface.app import FaceAnalysis
 
-        app = FaceAnalysis(name="buffalo_l",
+        _ensure_model()
+        app = FaceAnalysis(name=_MODEL, root=str(INSIGHTFACE_ROOT),
                            allowed_modules=["detection", "recognition"])
         app.prepare(ctx_id=-1, det_size=(640, 640))
         _app = app

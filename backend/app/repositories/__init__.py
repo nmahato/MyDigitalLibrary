@@ -2,6 +2,6 @@
 
 Services call these functions; nothing here knows about HTTP or FastAPI.
 """
-from . import duplicates, geocode, people, photos
+from . import albums, duplicates, geocode, people, photos, tags
 
-__all__ = ["photos", "people", "duplicates", "geocode"]
+__all__ = ["photos", "people", "duplicates", "geocode", "albums", "tags"]

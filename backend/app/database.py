@@ -76,6 +76,33 @@ CREATE TABLE IF NOT EXISTS geocode_cache (
     key   TEXT PRIMARY KEY,   -- rounded "lat,lon"
     label TEXT
 );
+
+CREATE TABLE IF NOT EXISTS albums (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    cover_photo INTEGER,
+    created_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS album_photos (
+    album_id  INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    photo_id  INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    added_at  TEXT,
+    PRIMARY KEY (album_id, photo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_album_photos_album ON album_photos(album_id);
+CREATE INDEX IF NOT EXISTS idx_album_photos_photo ON album_photos(photo_id);
+
+CREATE TABLE IF NOT EXISTS tags (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+CREATE TABLE IF NOT EXISTS photo_tags (
+    photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    tag_id   INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (photo_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_photo_tags_tag   ON photo_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_photo_tags_photo ON photo_tags(photo_id);
 """
 
 

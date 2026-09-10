@@ -22,9 +22,12 @@ def _build_where(f) -> tuple[str, list, str, list]:
     """Return (join_sql, join_params, where_sql, where_params) for a PhotoFilters."""
     join, join_params = "", []
     if f.person_id:
-        join = (" LEFT JOIN faces fa ON fa.photo_id=p.id AND fa.person_id=?"
-                " LEFT JOIN photo_people pp ON pp.photo_id=p.id AND pp.person_id=?")
+        join += (" LEFT JOIN faces fa ON fa.photo_id=p.id AND fa.person_id=?"
+                 " LEFT JOIN photo_people pp ON pp.photo_id=p.id AND pp.person_id=?")
         join_params += [f.person_id, f.person_id]
+    if f.album_id:
+        join += " JOIN album_photos ab ON ab.photo_id=p.id AND ab.album_id=?"
+        join_params.append(f.album_id)
 
     where, params = ["p.missing=0"], []
     if f.person_id:
@@ -50,6 +53,16 @@ def _build_where(f) -> tuple[str, list, str, list]:
     if f.year:
         where.append("substr(p.taken_at,1,4) = ?")
         params.append(str(f.year))
+    if f.folder:
+        folder = f.folder.replace("/", "\\").rstrip("\\")
+        where.append("(p.rel_path LIKE ? OR p.rel_path LIKE ?)")
+        params.append(folder + "\\%")   # backslash-separated (Windows scan)
+        params.append(folder + "/%")    # tolerate forward slashes just in case
+    if f.tag:
+        where.append(
+            "p.id IN (SELECT pt.photo_id FROM photo_tags pt "
+            "JOIN tags t ON t.id=pt.tag_id WHERE t.name=?)")
+        params.append(f.tag.strip().lstrip("#").lower())
     return join, join_params, " AND ".join(where), params
 
 
@@ -185,6 +198,43 @@ def counts() -> dict:
             "MIN(taken_at) earliest, MAX(taken_at) latest "
             "FROM photos WHERE missing=0").fetchone()
     return dict(r)
+
+
+def folder_tree() -> list[dict]:
+    """Nested folder structure derived from every photo's rel_path.
+
+    Each node: {name, path, count (photos at or below), children}.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT rel_path FROM photos WHERE missing=0").fetchall()
+
+    root: dict = {}
+    for r in rows:
+        rel = (r["rel_path"] or "").replace("/", "\\")
+        parts = rel.split("\\")[:-1]  # drop the filename
+        node = root
+        for part in parts:
+            if not part:
+                continue
+            entry = node.setdefault(part, {"count": 0, "children": {}})
+            entry["count"] += 1
+            node = entry["children"]
+
+    def to_list(d: dict, prefix: str) -> list[dict]:
+        out = []
+        for name in sorted(d, key=str.lower):
+            entry = d[name]
+            full = f"{prefix}\\{name}" if prefix else name
+            out.append({
+                "name": name,
+                "path": full,
+                "count": entry["count"],
+                "children": to_list(entry["children"], full),
+            })
+        return out
+
+    return to_list(root, "")
 
 
 def dedup_rows() -> list:

@@ -12,7 +12,10 @@ class PhotoFilters(BaseModel):
     location: str | None = None
     camera: str | None = None
     person_id: int | None = None
+    album_id: int | None = None
+    tag: str | None = None
     year: int | None = None
+    folder: str | None = None
     duplicates_only: bool = False
     sort: str = "date"
     order: str = "desc"
@@ -59,9 +62,16 @@ class PhotoOut(BaseModel):
     rating: int = 0
 
 
+class NamedRef(BaseModel):
+    id: int
+    name: str
+
+
 class PhotoDetail(PhotoOut):
     faces: list[FaceBox] = []
     people_tags: list[PersonTag] = []
+    hashtags: list[NamedRef] = []
+    albums: list[NamedRef] = []
 
 
 class PhotoPage(BaseModel):
@@ -88,6 +98,16 @@ class Facets(BaseModel):
     locations: list[LocationFacet] = []
     cameras: list[str] = []
     counts: Counts = Counts()
+
+
+class FolderNode(BaseModel):
+    name: str
+    path: str
+    count: int
+    children: list["FolderNode"] = []
+
+
+FolderNode.model_rebuild()
 
 
 class DeleteRequest(BaseModel):
@@ -224,6 +244,22 @@ class AutoResolveRequest(BaseModel):
 
 # ---------- import ----------
 
+class AlbumOut(BaseModel):
+    id: int
+    name: str
+    photo_count: int = 0
+    cover_photo: int | None = None
+    created_at: str | None = None
+
+
+class AlbumCreate(BaseModel):
+    name: str
+
+
+class AlbumPhotos(BaseModel):
+    photo_ids: list[int]
+
+
 class SourceRequest(BaseModel):
     source: str
 
@@ -260,5 +296,28 @@ class ConvertRequest(BaseModel):
 class ConvertResult(BaseModel):
     output: str
     size_bytes: int
+    width: int | None = None
+    height: int | None = None
     photo_id: int | None = None
     replaced: bool
+
+
+class RotateRequest(BaseModel):
+    degrees: int = 90            # clockwise; 90 | 180 | 270
+    overwrite: bool = True
+
+
+class ResizeRequest(BaseModel):
+    max_dimension: int | None = Field(None, ge=16, le=20000)
+    width: int | None = Field(None, ge=1, le=20000)
+    height: int | None = Field(None, ge=1, le=20000)
+    overwrite: bool = True
+
+
+class EnhanceRequest(BaseModel):
+    auto: bool = True
+    brightness: float = Field(1.0, ge=0.1, le=3.0)
+    contrast: float = Field(1.0, ge=0.1, le=3.0)
+    color: float = Field(1.0, ge=0.0, le=3.0)
+    sharpness: float = Field(1.0, ge=0.0, le=4.0)
+    overwrite: bool = True

@@ -15,6 +15,11 @@ DB_PATH = APP_DIR / "library.db"
 THUMB_DIR = APP_DIR / "thumbnails"
 THUMB_DIR.mkdir(exist_ok=True)
 
+# Where the InsightFace model bundle lives. Kept next to the DB so a service
+# account (which has no usable home dir) can still reach it.
+INSIGHTFACE_ROOT = Path(
+    os.environ.get("INSIGHTFACE_ROOT", str(APP_DIR / "insightface")))
+
 _SETTINGS_PATH = APP_DIR / "settings.json"
 
 DEFAULT_LIBRARY = os.environ.get("PHOTO_LIBRARY", r"D:\PhotoLibrary")

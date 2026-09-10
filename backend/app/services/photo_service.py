@@ -1,7 +1,9 @@
 """Business logic for browsing, inspecting and removing photos."""
 from ..core import NotFound, move_to_trash
+from ..repositories import albums as album_repo
 from ..repositories import people as people_repo
 from ..repositories import photos as photo_repo
+from ..repositories import tags as tag_repo
 from ..services.thumbnails import thumb_file
 
 _HIDDEN = {"indexed_at", "fs_modified", "faces_done", "missing"}
@@ -43,6 +45,8 @@ def get_detail(photo_id: int) -> dict:
     data = _public(row)
     data["faces"] = [dict(f) for f in people_repo.faces_for_photo(photo_id)]
     data["people_tags"] = [dict(t) for t in people_repo.tags_for_photo(photo_id)]
+    data["hashtags"] = [dict(t) for t in tag_repo.tags_for_photo(photo_id)]
+    data["albums"] = [dict(a) for a in album_repo.albums_for_photo(photo_id)]
     return data
 
 
