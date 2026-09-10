@@ -11,10 +11,16 @@
   Re-run after pulling new code with -Build to rebuild the frontend and refresh deps.
 
   Python / ffmpeg installed per-user (under %LOCALAPPDATA%, e.g. the Python
-  install-manager or a winget ffmpeg) are NOT readable by the default
-  ApplicationPoolIdentity. The script handles this by either:
-    * running the pool as a real account  ->  pass -PoolUser / -PoolPassword
-    * or granting the pool identity read/traverse into just those folders (default)
+  install-manager or a winget ffmpeg) are NOT readable by the default IIS
+  identities. Pick how the pool runs:
+    -PoolIdentity LocalSystem      (default) reads everything, no grants needed;
+                                   high privilege, deletes go to SYSTEM's bin
+    -PoolIdentity NetworkService   lower privilege; the script grants it read +
+                                   traverse into the per-user Python / ffmpeg dirs
+                                   (fails if C:\Users\<you> denies list to services)
+    -PoolIdentity ApplicationPoolIdentity   most isolated; same grants as above
+    -PoolUser "MACHINE\me"         run as a real account (prompts for the password);
+                                   deletes then land in that user's Recycle Bin
 
 .NOTES
   Prerequisites:
@@ -29,6 +35,8 @@ param(
   [int]   $Port            = 9090,
   [string]$PhotoLibrary    = "D:\PhotoLibrary",
   [string]$ProjectRoot     = (Split-Path -Parent $PSScriptRoot),
+  [ValidateSet("LocalSystem","NetworkService","LocalService","ApplicationPoolIdentity")]
+  [string]$PoolIdentity    = "LocalSystem",
   [string]$PoolUser        = "",          # e.g. "MACHINE\me" — pool runs as this account
   [string]$PoolPassword    = "",          # omit to be prompted securely
   [switch]$DeepLibraryAcl,                # one-time recursive ACL over the whole library
@@ -59,7 +67,8 @@ function Grant-Path {
 }
 
 function Grant-Traverse {
-  # "this folder only" RX (list + traverse, no inheritance) from $Target up to $StopAt.
+  # "this folder only" RX (list + traverse, no inheritance) from $Target's parent
+  # up to $StopAt. Needed when C:\Users\<you> denies list/traverse to services.
   param([string]$Target, [string]$Identity, [string]$StopAt)
   $dir = Split-Path -Parent $Target
   while ($dir -and $dir.Length -ge $StopAt.Length -and $dir -like "$StopAt*") {
@@ -108,7 +117,15 @@ $logsDir    = Join-Path $deployDir "logs"
 $dataDir    = Join-Path $deployDir "data"
 
 $useSpecificUser = [bool]$PoolUser
-$poolId = if ($useSpecificUser) { $PoolUser } else { "IIS AppPool\$AppPoolName" }
+$identityType = if ($useSpecificUser) { "SpecificUser" } else { $PoolIdentity }
+$poolId =
+  if     ($useSpecificUser)                        { $PoolUser }
+  elseif ($PoolIdentity -eq "NetworkService")      { "NT AUTHORITY\NETWORK SERVICE" }
+  elseif ($PoolIdentity -eq "LocalService")        { "NT AUTHORITY\LOCAL SERVICE" }
+  elseif ($PoolIdentity -eq "LocalSystem")         { "NT AUTHORITY\SYSTEM" }
+  else                                             { "IIS AppPool\$AppPoolName" }
+# LocalSystem can read everything already; skip the per-user grants for it.
+$needsProfileGrants = -not $useSpecificUser -and $PoolIdentity -ne "LocalSystem"
 
 Write-Host "== PhotoLibrary -> IIS ==" -ForegroundColor Cyan
 Write-Host "project    : $ProjectRoot"
@@ -201,21 +218,23 @@ Write-Host "web.config written"
 # --- 5. app pool --------------------------------------------------
 if (-not (Test-Path "IIS:\AppPools\$AppPoolName")) { New-WebAppPool -Name $AppPoolName | Out-Null }
 $ap = "IIS:\AppPools\$AppPoolName"
-Set-ItemProperty $ap managedRuntimeVersion ""
-Set-ItemProperty $ap startMode "AlwaysRunning"
-Set-ItemProperty $ap processModel.idleTimeout "00:00:00"
-Set-ItemProperty $ap processModel.loadUserProfile $true
-Set-ItemProperty $ap recycling.periodicRestart.time "00:00:00"
-Set-ItemProperty $ap recycling.disallowRotationOnConfigChange $true
-Set-ItemProperty $ap failure.rapidFailProtection $false
+Set-ItemProperty $ap -Name managedRuntimeVersion -Value ""
+Set-ItemProperty $ap -Name startMode -Value "AlwaysRunning"
+Set-ItemProperty $ap -Name processModel.idleTimeout -Value "00:00:00"
+Set-ItemProperty $ap -Name processModel.loadUserProfile -Value $true
+Set-ItemProperty $ap -Name recycling.periodicRestart.time -Value "00:00:00"
+Set-ItemProperty $ap -Name recycling.disallowRotationOnConfigChange -Value $true
+Set-ItemProperty $ap -Name failure.rapidFailProtection -Value $false
+
+$ppXPath = "system.applicationHost/applicationPools/add[@name='$AppPoolName']/processModel"
+Set-WebConfigurationProperty $ppXPath -Name identityType -Value $identityType
 if ($useSpecificUser) {
-  Set-ItemProperty $ap processModel.identityType "SpecificUser"
-  Set-ItemProperty $ap processModel.userName $PoolUser
-  Set-ItemProperty $ap processModel.password $PoolPassword
+  Set-WebConfigurationProperty $ppXPath -Name userName -Value $PoolUser
+  Set-WebConfigurationProperty $ppXPath -Name password -Value $PoolPassword
   Grant-BatchLogon $PoolUser
-} else {
-  Set-ItemProperty $ap processModel.identityType "ApplicationPoolIdentity"
 }
+$applied = (Get-WebConfigurationProperty $ppXPath -Name identityType).Value
+Write-Host "  pool identity: $applied ($poolId)"
 
 # --- 6. site -----------------------------------------------------
 if (Test-Path "IIS:\Sites\$SiteName") {
@@ -239,14 +258,17 @@ Grant-Path -Path $dataDir      -Identity $poolId -Level M
 # forces the (slow) recursive pass over everything already there.
 Grant-Path -Path $PhotoLibrary -Identity $poolId -Level M -Recurse:$DeepLibraryAcl
 
-if (-not $useSpecificUser) {
-  # Reach the per-user Python / ffmpeg that live under a profile.
+if ($needsProfileGrants) {
+  # Reach the per-user Python / ffmpeg that live under a profile. An inheritable
+  # ACE on the folder is enough for reads (child files inherit it; traverse is
+  # covered by the SeChangeNotifyPrivilege every account has) — no slow /T walk.
   $usersRoot = Join-Path $env:SystemDrive "Users"
-  foreach ($p in @($basePython, ($ff.Values | ForEach-Object { Split-Path -Parent $_ }))) {
+  $perUser = @($basePython) + ($ff.Values | ForEach-Object { Split-Path -Parent $_ })
+  foreach ($p in ($perUser | Select-Object -Unique)) {
     if ($p -and (Test-Path $p) -and $p -like "$usersRoot\*") {
-      Write-Host "  granting read into per-user path: $p"
-      Grant-Path -Path $p -Identity $poolId -Level RX -Recurse
+      Grant-Path -Path $p -Identity $poolId -Level RX -Recurse:$DeepLibraryAcl
       Grant-Traverse -Target $p -Identity $poolId -StopAt $usersRoot
+      Write-Host "  granted read+traverse on per-user path: $p"
     }
   }
 }
@@ -270,7 +292,13 @@ if ($ok) {
   Write-Host "OK  ->  http://localhost:$Port/" -ForegroundColor Green
 } else {
   Write-Warning "Pool started but /api/health is not answering. Last stdout log:"
-  Get-ChildItem "$logsDir\stdout*.log" -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime | Select-Object -Last 1 |
-    ForEach-Object { Get-Content $_.FullName -Tail 30 }
+  $last = Get-ChildItem "$logsDir\stdout*.log" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime | Select-Object -Last 1
+  $tail = if ($last) { Get-Content $last.FullName -Tail 30 } else { @() }
+  $tail | ForEach-Object { Write-Host "  $_" }
+  if ($tail -match 'Access is denied') {
+    Write-Warning ("The pool identity ($poolId) cannot read the Python/ffmpeg files. " +
+      "Re-run with  -PoolIdentity LocalSystem  (works immediately) or " +
+      "-PoolUser `"$env:COMPUTERNAME\$env:USERNAME`"  (prompts for your password).")
+  }
 }

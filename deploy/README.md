@@ -22,22 +22,18 @@ browser ──▶ IIS  (site "PhotoLibrary", port 8090)
 | Node.js 18+ | On PATH, to build the frontend. |
 | ffmpeg + ffprobe | On PATH when you deploy. The script bakes the resolved absolute paths into `web.config`. |
 
-### Per-user Python / ffmpeg
+### Pool identity (per-user Python / ffmpeg)
 
 If Python or ffmpeg are installed **for your user only** (under
 `C:\Users\<you>\AppData\...` — the Python install-manager and `winget` both do
-this), the default IIS `ApplicationPoolIdentity` cannot read them ("Access is
-denied" in `logs\stdout*.log`). Two ways through, both handled by the script:
+this), a low-privilege IIS identity can't read them ("Access is denied" in
+`logs\stdout*.log`). `-PoolIdentity` picks how the pool runs:
 
-* **Recommended — run the pool as your account:**
-  `.\Deploy-ToIIS.ps1 -Port 9090 -PoolUser "$env:COMPUTERNAME\$env:USERNAME"`
-  It prompts for your Windows password (stored DPAPI-encrypted in IIS config) and
-  grants "Log on as a batch job". Deletes then go to *your* Recycle Bin and
-  everything under your profile just works.
-* **Default — grant read-in:** without `-PoolUser`, the script grants the pool
-  identity read/execute on the base-Python and ffmpeg folders plus traverse on the
-  `C:\Users\<you>\...` path to reach them. Works, but breaks if those tools move
-  (a Python or ffmpeg update); re-run the script to re-grant.
+| `-PoolIdentity` | Notes |
+|---|---|
+| **`LocalSystem`** (default) | Reads everything, no grants. High privilege; deleted files go to the SYSTEM account's Recycle Bin (still recoverable). Simplest and always works. |
+| `NetworkService` / `ApplicationPoolIdentity` | Lower privilege. Script grants read + folder-traverse into the per-user Python/ffmpeg dirs — but if `C:\Users\<you>` denies "list folder" to service accounts this still fails; re-run after a Python/ffmpeg update to re-grant. |
+| `-PoolUser "MACHINE\me"` | Runs as your account (prompts for the Windows password, stored DPAPI-encrypted; grants "Log on as a batch job"). Deletes land in *your* Recycle Bin. |
 
 ## Deploy
 
@@ -45,7 +41,7 @@ From an **elevated** PowerShell prompt:
 
 ```powershell
 cd C:\Personal\projects\ImageViewer\deploy
-.\Deploy-ToIIS.ps1 -Port 8099 -PhotoLibrary D:\PhotoLibrary
+.\Deploy-ToIIS.ps1 -Port 9090 -PhotoLibrary D:\PhotoLibrary
 ```
 
 If PowerShell blocks the script: `Unblock-File .\*.ps1` first, or run it as
@@ -57,10 +53,10 @@ The script is idempotent. It:
 2. Creates `backend\.venv` and installs `requirements.txt` (skip with an existing venv unless `-Build`).
 3. Builds the frontend (`npm ci && npm run build`) if `frontend\dist` is missing or `-Build`.
 4. Writes `deploy\web.config` from `web.config.template` with this machine's paths.
-5. Creates app pool **PhotoLibrary** — *No Managed Code*, `AlwaysRunning`, idle timeout 0, periodic recycle off (so the scan process is never killed underneath you).
+5. Creates app pool **PhotoLibrary** — *No Managed Code*, `AlwaysRunning`, idle timeout 0, periodic recycle off (so the scan process is never killed underneath you), identity per `-PoolIdentity` (default `LocalSystem`).
 6. Creates site **PhotoLibrary** on the given port, physical path = `deploy\`.
-7. Grants the pool identity (`IIS AppPool\PhotoLibrary`):
-   - read/execute on `backend\`, `frontend\dist\`, `deploy\`
+7. Grants the pool identity:
+   - read/execute on `backend\`, `frontend\dist\`, `deploy\` (and per-user Python/ffmpeg dirs unless `LocalSystem`)
    - modify on `deploy\data\`, `deploy\logs\`
    - **modify on the photo library** (import/convert/delete need to write there)
 8. Restarts the pool and checks `http://localhost:<port>/api/health`.
@@ -102,7 +98,8 @@ decisions. Deleting it just forces a rescan.
 **502.3 / "process failed to start"** — check `deploy\logs\stdout*.log`.
 Usually one of:
 - `Access is denied` for a `...\AppData\Local\Python\...` path — per-user Python;
-  see "Per-user Python / ffmpeg" above (use `-PoolUser`, or re-run to re-grant).
+  the pool identity can't read it. Re-run with the default `-PoolIdentity LocalSystem`
+  (or `-PoolUser "MACHINE\me"`). See "Pool identity" above.
 - wrong `processPath` (venv missing) — re-run with `-Build`.
 - `run.py` can't import `app` — check `PYTHONPATH` in `web.config`.
 
