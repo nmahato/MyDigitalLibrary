@@ -23,6 +23,7 @@ export const api = {
   scan: (full = false) => req("/api/library/scan", { method: "POST", body: { full } }),
   scanProgress: () => req("/api/library/scan"),
   saveSettings: (patch) => req("/api/settings", { method: "POST", body: patch }),
+  folders: () => req("/api/library/folders"),
 
   // photos
   photos: (params) => req("/api/photos?" + new URLSearchParams(clean(params))),
@@ -31,8 +32,31 @@ export const api = {
   deletePhotos: (ids) => req("/api/photos/delete", { method: "POST", body: { ids } }),
   setRating: (id, rating) =>
     req(`/api/photos/${id}/rating`, { method: "PATCH", body: { rating } }),
-  convert: (id, body) =>
-    req(`/api/photos/${id}/convert`, { method: "POST", body }),
+  convert: (id, body) => req(`/api/photos/${id}/convert`, { method: "POST", body }),
+  rotate: (id, degrees, overwrite = true) =>
+    req(`/api/photos/${id}/rotate`, { method: "POST", body: { degrees, overwrite } }),
+  resize: (id, body) => req(`/api/photos/${id}/resize`, { method: "POST", body }),
+  enhance: (id, body) => req(`/api/photos/${id}/enhance`, { method: "POST", body }),
+
+  // albums
+  albums: () => req("/api/albums"),
+  createAlbum: (name) => req("/api/albums", { method: "POST", body: { name } }),
+  renameAlbum: (id, name) =>
+    req(`/api/albums/${id}`, { method: "PATCH", body: { name } }),
+  deleteAlbum: (id) => req(`/api/albums/${id}`, { method: "DELETE" }),
+  addToAlbum: (id, photo_ids) =>
+    req(`/api/albums/${id}/photos`, { method: "POST", body: { photo_ids } }),
+  removeFromAlbum: (id, photo_ids) =>
+    req(`/api/albums/${id}/photos`, { method: "DELETE", body: { photo_ids } }),
+
+  // hashtags
+  tags: () => req("/api/tags"),
+  addTag: (photoId, name) =>
+    req(`/api/photos/${photoId}/tags`, { method: "POST", body: { name } }),
+  removeTag: (photoId, name) =>
+    req(`/api/photos/${photoId}/tags/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  bulkTag: (photo_ids, name) =>
+    req("/api/tags/bulk", { method: "POST", body: { photo_ids, name } }),
 
   // people / faces
   people: () => req("/api/people"),

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { api } from "./api.js";
 import Gallery from "./components/Gallery.jsx";
 import PeoplePanel from "./components/PeoplePanel.jsx";
+import AlbumsPanel from "./components/AlbumsPanel.jsx";
 import DuplicatesView from "./components/DuplicatesView.jsx";
 import ImportWizard from "./components/ImportWizard.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
@@ -12,6 +13,7 @@ export const useToast = () => useContext(ToastCtx);
 const TABS = [
   ["library", "Library"],
   ["people", "People"],
+  ["albums", "Albums"],
   ["duplicates", "Duplicates"],
   ["import", "Import"],
   ["settings", "Settings"],
@@ -88,6 +90,7 @@ export default function App() {
         <div className="body">
           {tab === "library" && <Gallery status={status} />}
           {tab === "people" && <PeoplePanel />}
+          {tab === "albums" && <AlbumsPanel />}
           {tab === "duplicates" && <DuplicatesView />}
           {tab === "import" && <ImportWizard onDone={refreshStatus} />}
           {tab === "settings" && (

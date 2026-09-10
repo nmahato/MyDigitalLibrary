@@ -1,25 +1,27 @@
 import { useEffect, useState } from "react";
 import { api, downloadUrl, fileUrl, humanBytes } from "../api.js";
 import { useToast } from "../App.jsx";
-import ConvertDialog from "./ConvertDialog.jsx";
 
 export default function Lightbox({
   items,
   index,
   people,
+  albums = [],
   onIndex,
   onClose,
+  onEdit,
   onDeleted,
   onNeedMore,
 }) {
   const notify = useToast();
   const item = items[index];
   const [detail, setDetail] = useState(null);
-  const [showConvert, setShowConvert] = useState(false);
 
+  const reload = () => item && api.photo(item.id).then(setDetail).catch(() => {});
   useEffect(() => {
     setDetail(null);
-    if (item) api.photo(item.id).then(setDetail).catch(() => {});
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
 
   const go = (delta) => {
@@ -31,6 +33,7 @@ export default function Lightbox({
 
   useEffect(() => {
     const h = (e) => {
+      if (e.target.tagName === "INPUT") return;
       if (e.key === "Escape") onClose();
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === "ArrowRight") go(1);
@@ -47,19 +50,36 @@ export default function Lightbox({
     if (r.removed.length) {
       notify("Moved to Recycle Bin");
       onDeleted(item.id);
-    } else {
-      notify(r.errors[0]?.error || "Delete failed");
-    }
+    } else notify(r.errors[0]?.error || "Delete failed");
   };
 
-  const tag = async () => {
+  const tagPerson = async () => {
     const name = prompt("Add person to this photo:");
     if (!name) return;
     let person = people.find((p) => p.name.toLowerCase() === name.toLowerCase());
     if (!person) person = await api.createPerson(name);
     await api.tagPhoto(item.id, person.id);
     notify(`Tagged as ${person.name}`);
-    api.photo(item.id).then(setDetail);
+    reload();
+  };
+
+  const addHashtag = async () => {
+    const name = prompt("Add hashtag:  #");
+    if (!name) return;
+    const r = await api.addTag(item.id, name);
+    notify(`#${r.tag}`);
+    reload();
+  };
+
+  const addToAlbum = async () => {
+    let name = prompt("Add to album (existing or new):");
+    if (!name) return;
+    name = name.trim();
+    let album = albums.find((a) => a.name.toLowerCase() === name.toLowerCase());
+    if (!album) album = await api.createAlbum(name);
+    await api.addToAlbum(album.id, [item.id]);
+    notify(`Added to "${album.name}"`);
+    reload();
   };
 
   return (
@@ -72,10 +92,14 @@ export default function Lightbox({
         </span>
         <div className="spacer" />
         <a href={downloadUrl(item.id)}>Download</a>
+        <button onClick={addHashtag}># Tag</button>
+        <button onClick={addToAlbum}>+ Album</button>
+        <button onClick={tagPerson}>Person</button>
         {item.media_type === "image" && (
-          <button onClick={() => setShowConvert(true)}>Convert…</button>
+          <button className="primary" onClick={() => onEdit?.(item)}>
+            ✎ Edit
+          </button>
         )}
-        <button onClick={tag}>Tag person</button>
         <button className="danger" onClick={del}>
           Delete
         </button>
@@ -109,13 +133,9 @@ export default function Lightbox({
             </tr>
             <tr>
               <td>Dimensions</td>
-              <td>
-                {item.width && item.height ? `${item.width}×${item.height}` : "—"}
-              </td>
+              <td>{item.width && item.height ? `${item.width}×${item.height}` : "—"}</td>
               <td>Camera</td>
-              <td>
-                {[item.camera_make, item.camera_model].filter(Boolean).join(" ") || "—"}
-              </td>
+              <td>{[item.camera_make, item.camera_model].filter(Boolean).join(" ") || "—"}</td>
             </tr>
             <tr>
               <td>Location</td>
@@ -126,38 +146,43 @@ export default function Lightbox({
           </tbody>
         </table>
         <div className="spacer" />
-        <div>
+        <div className="lb-chips">
+          {detail?.albums?.map((a) => (
+            <span key={"al" + a.id} className="chip">📁 {a.name}</span>
+          ))}
+          {detail?.hashtags?.map((t) => (
+            <span
+              key={"h" + t.id}
+              className="chip"
+              title="click to remove"
+              onClick={async () => {
+                await api.removeTag(item.id, t.name);
+                reload();
+              }}
+            >
+              #{t.name} ✕
+            </span>
+          ))}
           {detail?.people_tags?.map((p) => (
             <span
-              key={p.id}
+              key={"p" + p.id}
               className="chip"
+              title="click to remove"
               onClick={async () => {
                 await api.untagPhoto(item.id, p.id);
-                api.photo(item.id).then(setDetail);
+                reload();
               }}
-              title="click to remove"
             >
               {p.name} ✕
             </span>
           ))}
           {detail?.faces?.filter((f) => f.name).map((f) => (
-            <span key={f.id} className="chip active">
-              {f.name}
+            <span key={"f" + f.id} className="chip active">
+              🙂 {f.name}
             </span>
           ))}
         </div>
       </div>
-
-      {showConvert && (
-        <ConvertDialog
-          photo={item}
-          onClose={() => setShowConvert(false)}
-          onDone={(msg) => {
-            notify(msg);
-            setShowConvert(false);
-          }}
-        />
-      )}
     </div>
   );
 }

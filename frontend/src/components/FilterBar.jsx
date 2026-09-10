@@ -1,17 +1,30 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import FolderTree from "./FolderTree.jsx";
 
-export default function FilterBar({ filters, setFilters, people }) {
+export default function FilterBar({ filters, setFilters, people, status }) {
   const [facets, setFacets] = useState(null);
+  const [albums, setAlbums] = useState([]);
+  const [tags, setTags] = useState([]);
+
+  const reloadKey = JSON.stringify(status?.counts || {});
 
   useEffect(() => {
     api.facets().then(setFacets).catch(() => {});
-  }, []);
+    api.albums().then(setAlbums).catch(() => {});
+    api.tags().then(setTags).catch(() => {});
+  }, [reloadKey]);
 
   const set = (patch) => setFilters((f) => ({ ...f, ...patch, offset: 0 }));
 
   return (
     <div className="sidebar">
+      <FolderTree
+        selected={filters.folder}
+        onSelect={(folder) => set({ folder })}
+        reloadKey={reloadKey}
+      />
+
       <div className="field">
         <label>Search</label>
         <input
@@ -93,7 +106,7 @@ export default function FilterBar({ filters, setFilters, people }) {
 
       {people?.length > 0 && (
         <div className="field">
-          <label>Person</label>
+          <label>Person (face)</label>
           <select
             value={filters.person_id || ""}
             onChange={(e) =>
@@ -107,6 +120,44 @@ export default function FilterBar({ filters, setFilters, people }) {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {albums.length > 0 && (
+        <div className="field">
+          <label>Album</label>
+          <select
+            value={filters.album_id || ""}
+            onChange={(e) =>
+              set({ album_id: e.target.value ? Number(e.target.value) : undefined })
+            }
+          >
+            <option value="">Any</option>
+            {albums.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.photo_count})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {tags.length > 0 && (
+        <div className="field">
+          <label>Hashtag</label>
+          <div className="row">
+            {tags.slice(0, 30).map((t) => (
+              <span
+                key={t.id}
+                className={"chip" + (filters.tag === t.name ? " active" : "")}
+                onClick={() =>
+                  set({ tag: filters.tag === t.name ? undefined : t.name })
+                }
+              >
+                #{t.name} <span className="muted">{t.photo_count}</span>
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
