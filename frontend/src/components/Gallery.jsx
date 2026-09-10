@@ -19,6 +19,8 @@ export default function Gallery({ status }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [lastIdx, setLastIdx] = useState(null);
   const [lightboxIdx, setLightboxIdx] = useState(null);
   const [editing, setEditing] = useState(null); // photo object
   const [people, setPeople] = useState([]);
@@ -86,8 +88,32 @@ export default function Gallery({ status }) {
       n.has(id) ? n.delete(id) : n.add(id);
       return n;
     });
-  const clearSel = () => setSelected(new Set());
+  const clearSel = () => {
+    setSelected(new Set());
+    setLastIdx(null);
+  };
+  const selectAll = () => setSelected(new Set(items.map((i) => i.id)));
   const ids = () => [...selected];
+
+  // click/shift-click behaviour for a tile
+  const onTileClick = (e, it, idx) => {
+    if (selectMode || e.shiftKey || e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      if (e.shiftKey && lastIdx != null) {
+        const [a, b] = [Math.min(lastIdx, idx), Math.max(lastIdx, idx)];
+        setSelected((s) => {
+          const n = new Set(s);
+          for (let k = a; k <= b; k++) n.add(items[k].id);
+          return n;
+        });
+      } else {
+        toggle(it.id);
+      }
+      setLastIdx(idx);
+    } else {
+      setLightboxIdx(idx);
+    }
+  };
 
   const bulk = async (label, fn, { refresh } = {}) => {
     try {
@@ -147,14 +173,32 @@ export default function Gallery({ status }) {
     <>
       <FilterBar filters={filters} setFilters={setFilters} people={people} status={status} />
       <div className="content">
-        <div className="row" style={{ marginBottom: 12 }}>
+        <div className={"row selbar" + (selected.size ? " active" : "")} style={{ marginBottom: 12 }}>
           <span className="muted">
             {total.toLocaleString()} result{total === 1 ? "" : "s"}
           </span>
+          <button
+            className={selectMode ? "active" : ""}
+            onClick={() => {
+              setSelectMode((v) => !v);
+              if (selectMode) clearSel();
+            }}
+          >
+            {selectMode ? "✓ Selecting" : "Select"}
+          </button>
+          {(selectMode || selected.size > 0) && (
+            <>
+              <button onClick={selectAll}>All {items.length}</button>
+              <button onClick={clearSel}>None</button>
+            </>
+          )}
           <div className="spacer" />
           {selected.size > 0 && (
             <>
               <span className="pill">{selected.size} selected</span>
+              <button className="danger" onClick={bulkDelete}>
+                🗑 Delete {selected.size}
+              </button>
               <button onClick={bulkAlbum}>+ Album</button>
               <button onClick={bulkHashtag}># Hashtag</button>
               <button onClick={bulkTagPerson}>Person</button>
@@ -188,23 +232,16 @@ export default function Gallery({ status }) {
               >
                 ⤢
               </button>
-              <button className="danger" onClick={bulkDelete}>
-                🗑
-              </button>
-              <button onClick={clearSel}>Clear</button>
             </>
           )}
         </div>
 
-        <div className="grid">
+        <div className={"grid" + (selectMode ? " select-mode" : "")}>
           {items.map((it, idx) => (
             <div
               key={it.id}
               className={"tile" + (selected.has(it.id) ? " selected" : "")}
-              onClick={(e) => {
-                if (e.shiftKey || e.metaKey || e.ctrlKey) toggle(it.id);
-                else setLightboxIdx(idx);
-              }}
+              onClick={(e) => onTileClick(e, it, idx)}
             >
               <img loading="lazy" src={thumbUrl(it.id)} alt={it.filename} />
               {it.media_type === "video" && (
