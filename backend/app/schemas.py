@@ -31,6 +31,9 @@ class FaceBox(BaseModel):
     bbox_h: int | None = None
     person_id: int | None = None
     name: str | None = None
+    auto: int | None = None
+    confirmed: int = 0
+    similarity: float | None = None
 
 
 class PersonTag(BaseModel):
@@ -167,6 +170,8 @@ class PersonOut(BaseModel):
     auto: int = 0
     cover_face: int | None = None
     face_count: int = 0
+    confirmed_count: int = 0
+    suggested_count: int = 0
     photo_count: int = 0
 
 
@@ -195,9 +200,12 @@ class DetectRequest(BaseModel):
 class FaceEngineStatus(BaseModel):
     engine_available: bool
     load_error: str | None = None
-    faces: int
-    named_faces: int
-    photos_pending: int
+    faces: int = 0
+    named_faces: int = 0
+    unassigned_faces: int = 0
+    suggested_faces: int = 0
+    unnamed_groups: int = 0
+    photos_pending: int = 0
     progress: dict
 
 

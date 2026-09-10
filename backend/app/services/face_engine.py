@@ -112,7 +112,9 @@ def _detect_all(limit):
                 pass
             people_repo.mark_photo_faces_done(row["id"])
 
-        PROGRESS["phase"] = "clustering"
+        PROGRESS["phase"] = "recognising"
+        recognize()
+        PROGRESS["phase"] = "grouping"
         cluster_unassigned()
         PROGRESS["phase"] = "done"
     finally:
@@ -137,62 +139,95 @@ def _detect_one(app, photo_id: int, path: str) -> int:
     return len(faces)
 
 
-# ---------- clustering ----------
+# ---------- recognition + clustering ----------
+
+RECOGNIZE_THRESHOLD = 0.42   # cosine to a named person's centroid -> suggestion
+CLUSTER_MATCH_THRESHOLD = 0.45
+
 
 def _norm(v):
     n = np.linalg.norm(v)
     return v / n if n else v
 
 
-def _matrix():
-    rows = people_repo.load_embeddings()
-    ids, vecs, persons = [], [], []
+def _buf(b):
+    return np.frombuffer(b, dtype=np.float32)
+
+
+def _centroids(*, auto: bool | None, confirmed_only: bool) -> dict[int, np.ndarray]:
+    """Unit-normalised mean embedding per person, filtered by the `auto` flag."""
+    groups: dict[int, list[np.ndarray]] = {}
+    for r in people_repo.person_embeddings(confirmed_only=confirmed_only):
+        if auto is not None and bool(r["auto"]) != auto:
+            continue
+        groups.setdefault(r["person_id"], []).append(_buf(r["embedding"]))
+    return {pid: _norm(np.mean(v, axis=0)) for pid, v in groups.items() if v}
+
+
+def recognize(threshold: float = RECOGNIZE_THRESHOLD) -> int:
+    """Attach unassigned faces to the nearest *named* person as a suggestion."""
+    centroids = _centroids(auto=False, confirmed_only=True)
+    if not centroids:
+        centroids = _centroids(auto=False, confirmed_only=False)
+    if not centroids:
+        return 0
+
+    pids = list(centroids)
+    mat = np.vstack([centroids[p] for p in pids])  # (P, D)
+
+    rows = people_repo.unassigned_embeddings()
+    updates: list[tuple[int, float, int]] = []
     for r in rows:
-        ids.append(r["id"])
-        persons.append(r["person_id"])
-        vecs.append(np.frombuffer(r["embedding"], dtype=np.float32))
-    if not vecs:
-        return [], np.zeros((0, 512)), []
-    return ids, np.vstack(vecs), persons
+        v = _norm(_buf(r["embedding"]))
+        sims = mat @ v
+        j = int(np.argmax(sims))
+        if float(sims[j]) >= threshold:
+            updates.append((pids[j], round(float(sims[j]), 4), r["id"]))
+    if updates:
+        people_repo.apply_recognition(updates)
+    return len(updates)
 
 
 def cluster_unassigned(eps: float = 0.45, min_samples: int = 2):
-    ids, vecs, persons = _matrix()
-    if not ids:
+    rows = people_repo.unassigned_embeddings()
+    if len(rows) < min_samples:
+        people_repo.delete_empty_auto_people()
         return
 
-    named_idx = [i for i, p in enumerate(persons) if p is not None]
-    centroids = {}
-    for pid in {persons[i] for i in named_idx}:
-        idx = [i for i in named_idx if persons[i] == pid]
-        centroids[pid] = _norm(vecs[idx].mean(axis=0))
+    ids = [r["id"] for r in rows]
+    vecs = np.vstack([_buf(r["embedding"]) for r in rows])
+    labels = _dbscan_cosine(vecs, eps, min_samples)
 
-    free = [i for i, p in enumerate(persons) if p is None]
-    assigned: list[tuple[int, int]] = []
-    for i in list(free):
-        best_pid, best_sim = None, 0.0
-        for pid, c in centroids.items():
-            sim = float(np.dot(_norm(vecs[i]), c))
-            if sim > best_sim:
-                best_pid, best_sim = pid, sim
-        if best_sim >= 0.55:
-            assigned.append((best_pid, ids[i]))
-    if assigned:
-        people_repo.assign_faces(assigned)
-        done = {fid for _, fid in assigned}
-        free = [i for i in free if ids[i] not in done]
-    if not free:
-        return
+    auto_centroids = _centroids(auto=True, confirmed_only=False)
+    auto_pids = list(auto_centroids)
+    auto_mat = np.vstack([auto_centroids[p] for p in auto_pids]) if auto_pids else None
+    seq = people_repo.count_auto_people()
 
-    labels = _dbscan_cosine(vecs[free], eps, min_samples)
     for lbl in sorted(set(labels)):
-        members = [ids[free[k]] for k in range(len(free)) if labels[k] == lbl]
+        members = [ids[k] for k in range(len(ids)) if labels[k] == lbl]
         if lbl == -1 or len(members) < min_samples:
-            people_repo.set_cluster(members, None)
             continue
-        pid = people_repo.create(f"Person {datetime.now():%m%d}-{int(lbl) + 1}", auto=True)
+        idx = [k for k in range(len(ids)) if labels[k] == lbl]
+        centroid = _norm(vecs[idx].mean(axis=0))
+
+        pid = None
+        if auto_mat is not None:
+            sims = auto_mat @ centroid
+            j = int(np.argmax(sims))
+            if float(sims[j]) >= CLUSTER_MATCH_THRESHOLD:
+                pid = auto_pids[j]
+        if pid is None:
+            seq += 1
+            pid = people_repo.create(f"Unnamed {seq}", auto=True)
+            people_repo.set_cover(pid, members[0])
         people_repo.assign_cluster(members, pid, int(lbl))
-        people_repo.set_cover(pid, members[0])
+
+    people_repo.delete_empty_auto_people()
+
+
+def full_pass():
+    recognize()
+    cluster_unassigned()
 
 
 def _dbscan_cosine(vecs, eps, min_samples):

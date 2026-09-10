@@ -11,11 +11,13 @@ def list_with_counts() -> list:
         return conn.execute("""
             SELECT pe.id, pe.name, pe.auto, pe.cover_face,
                    (SELECT COUNT(*) FROM faces f WHERE f.person_id=pe.id) face_count,
+                   (SELECT COUNT(*) FROM faces f WHERE f.person_id=pe.id AND f.confirmed=1) confirmed_count,
+                   (SELECT COUNT(*) FROM faces f WHERE f.person_id=pe.id AND f.confirmed=0) suggested_count,
                    (SELECT COUNT(DISTINCT photo_id) FROM (
                         SELECT photo_id FROM faces WHERE person_id=pe.id
                         UNION SELECT photo_id FROM photo_people WHERE person_id=pe.id
                    )) photo_count
-            FROM people pe ORDER BY photo_count DESC, pe.name
+            FROM people pe ORDER BY pe.auto, photo_count DESC, pe.name
         """).fetchall()
 
 
@@ -69,16 +71,24 @@ def merge(source_id: int, target_id: int) -> None:
 def faces_for_photo(photo_id: int) -> list:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT f.id, f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h, f.person_id, pe.name "
+            "SELECT f.id, f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h, f.person_id, "
+            "f.confirmed, f.similarity, pe.name, pe.auto "
             "FROM faces f LEFT JOIN people pe ON pe.id=f.person_id "
-            "WHERE f.photo_id=?", (photo_id,)).fetchall()
+            "WHERE f.photo_id=? ORDER BY f.bbox_x", (photo_id,)).fetchall()
 
 
-def faces_for_person(person_id: int, limit: int = 200) -> list:
+def faces_for_person(person_id: int, *, status: str = "all", limit: int = 300) -> list:
+    where = "person_id=?"
+    if status == "confirmed":
+        where += " AND confirmed=1"
+    elif status == "suggested":
+        where += " AND confirmed=0"
+    order = "confirmed DESC, similarity DESC, det_score DESC"
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, photo_id, det_score FROM faces WHERE person_id=? "
-            "ORDER BY det_score DESC LIMIT ?", (person_id, limit)).fetchall()
+            f"SELECT id, photo_id, det_score, confirmed, similarity FROM faces "
+            f"WHERE {where} ORDER BY {order} LIMIT ?",
+            (person_id, limit)).fetchall()
 
 
 def face_with_photo(face_id: int):
@@ -116,8 +126,30 @@ def photos_pending_faces(limit: int | None = None) -> list:
 def load_embeddings() -> list:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, person_id, embedding FROM faces "
+            "SELECT id, person_id, confirmed, embedding FROM faces "
             "WHERE embedding IS NOT NULL").fetchall()
+
+
+def unassigned_embeddings() -> list:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT id, embedding FROM faces "
+            "WHERE person_id IS NULL AND embedding IS NOT NULL").fetchall()
+
+
+def person_embeddings(*, confirmed_only: bool) -> list:
+    q = ("SELECT f.person_id, pe.auto, f.confirmed, f.embedding "
+         "FROM faces f JOIN people pe ON pe.id=f.person_id "
+         "WHERE f.embedding IS NOT NULL")
+    if confirmed_only:
+        q += " AND f.confirmed=1"
+    with get_conn() as conn:
+        return conn.execute(q).fetchall()
+
+
+def get_face(face_id: int):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM faces WHERE id=?", (face_id,)).fetchone()
 
 
 def assign_faces(pairs: list[tuple[int | None, int]]) -> None:
@@ -126,10 +158,50 @@ def assign_faces(pairs: list[tuple[int | None, int]]) -> None:
         conn.executemany("UPDATE faces SET person_id=? WHERE id=?", pairs)
 
 
+def apply_recognition(rows: list[tuple[int, float, int]]) -> None:
+    """rows of (person_id, similarity, face_id) — suggestions (confirmed=0)."""
+    with get_conn() as conn:
+        conn.executemany(
+            "UPDATE faces SET person_id=?, similarity=?, confirmed=0 WHERE id=?", rows)
+
+
 def assign_face(face_id: int, person_id: int | None, *, confirmed: bool = True) -> None:
     with get_conn() as conn:
-        conn.execute("UPDATE faces SET person_id=?, confirmed=? WHERE id=?",
-                     (person_id, 1 if confirmed else 0, face_id))
+        conn.execute(
+            "UPDATE faces SET person_id=?, confirmed=?, similarity=NULL WHERE id=?",
+            (person_id, 1 if confirmed else 0, face_id))
+
+
+def confirm_face(face_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE faces SET confirmed=1 WHERE id=?", (face_id,))
+
+
+def confirm_person_faces(person_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE faces SET confirmed=1, similarity=NULL WHERE person_id=?",
+            (person_id,))
+
+
+def detach_face(face_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE faces SET person_id=NULL, confirmed=0, cluster_id=NULL, "
+            "similarity=NULL WHERE id=?", (face_id,))
+
+
+def count_auto_people() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) c FROM people WHERE auto=1").fetchone()["c"]
+
+
+def delete_empty_auto_people() -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM people WHERE auto=1 AND id NOT IN "
+            "(SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)")
+        return cur.rowcount
 
 
 def set_cluster(face_ids: list[int], cluster_id: int | None) -> None:
@@ -149,11 +221,21 @@ def face_stats() -> dict:
     with get_conn() as conn:
         faces = conn.execute("SELECT COUNT(*) c FROM faces").fetchone()["c"]
         named = conn.execute(
-            "SELECT COUNT(*) c FROM faces WHERE person_id IS NOT NULL").fetchone()["c"]
+            "SELECT COUNT(*) c FROM faces f JOIN people pe ON pe.id=f.person_id "
+            "WHERE pe.auto=0").fetchone()["c"]
+        unassigned = conn.execute(
+            "SELECT COUNT(*) c FROM faces WHERE person_id IS NULL").fetchone()["c"]
+        suggested = conn.execute(
+            "SELECT COUNT(*) c FROM faces WHERE person_id IS NOT NULL AND confirmed=0"
+        ).fetchone()["c"]
+        groups = conn.execute(
+            "SELECT COUNT(*) c FROM people WHERE auto=1").fetchone()["c"]
         pending = conn.execute(
             "SELECT COUNT(*) c FROM photos WHERE media_type='image' AND faces_done=0"
         ).fetchone()["c"]
-    return {"faces": faces, "named_faces": named, "photos_pending": pending}
+    return {"faces": faces, "named_faces": named, "unassigned_faces": unassigned,
+            "suggested_faces": suggested, "unnamed_groups": groups,
+            "photos_pending": pending}
 
 
 # ---------- photo-level tags ----------

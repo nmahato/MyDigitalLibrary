@@ -41,8 +41,8 @@ def merge_people(body: MergeRequest):
 
 
 @router.get("/people/{person_id}/faces")
-def person_faces(person_id: int):
-    return people_service.faces_of(person_id)
+def person_faces(person_id: int, status: str = "all"):
+    return people_service.faces_of(person_id, status)
 
 
 @router.get("/faces/{face_id}/crop")
@@ -59,6 +59,16 @@ def assign_face(face_id: int, body: FaceAssign):
     return people_service.assign_face(face_id, person_id=body.person_id, name=body.name)
 
 
+@router.post("/faces/{face_id}/confirm")
+def confirm_face(face_id: int):
+    return people_service.confirm_face(face_id)
+
+
+@router.post("/faces/{face_id}/reject")
+def reject_face(face_id: int):
+    return people_service.detach_face(face_id)
+
+
 @router.get("/faces/status", response_model=FaceEngineStatus)
 def faces_status():
     return people_service.engine_status()
@@ -67,6 +77,11 @@ def faces_status():
 @router.post("/faces/detect")
 def detect(body: DetectRequest):
     return people_service.detect(body.limit)
+
+
+@router.post("/faces/recognize")
+def recognize():
+    return people_service.recognize()
 
 
 @router.post("/faces/cluster")

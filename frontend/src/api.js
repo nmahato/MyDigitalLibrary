@@ -66,15 +66,21 @@ export const api = {
   deletePerson: (id) => req(`/api/people/${id}`, { method: "DELETE" }),
   mergePeople: (source_id, target_id) =>
     req("/api/people/merge", { method: "POST", body: { source_id, target_id } }),
-  personFaces: (id) => req(`/api/people/${id}/faces`),
+  personFaces: (id, status = "all") =>
+    req(`/api/people/${id}/faces?status=${status}`),
   assignFace: (faceId, body) =>
     req(`/api/faces/${faceId}/assign`, { method: "POST", body }),
+  confirmFace: (faceId) =>
+    req(`/api/faces/${faceId}/confirm`, { method: "POST", body: {} }),
+  rejectFace: (faceId) =>
+    req(`/api/faces/${faceId}/reject`, { method: "POST", body: {} }),
   tagPhoto: (photoId, person_id) =>
     req(`/api/photos/${photoId}/people`, { method: "POST", body: { person_id } }),
   untagPhoto: (photoId, personId) =>
     req(`/api/photos/${photoId}/people/${personId}`, { method: "DELETE" }),
   facesStatus: () => req("/api/faces/status"),
   detectFaces: (limit) => req("/api/faces/detect", { method: "POST", body: { limit } }),
+  recognizeFaces: () => req("/api/faces/recognize", { method: "POST", body: {} }),
   clusterFaces: () => req("/api/faces/cluster", { method: "POST", body: {} }),
 
   // duplicates

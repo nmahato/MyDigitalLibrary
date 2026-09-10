@@ -1,47 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, faceCropUrl, thumbUrl } from "../api.js";
+import { api, faceCropUrl } from "../api.js";
 import { useToast } from "../App.jsx";
 
 export default function PeoplePanel() {
   const notify = useToast();
   const [people, setPeople] = useState([]);
-  const [faceStatus, setFaceStatus] = useState(null);
+  const [fs, setFs] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [faces, setFaces] = useState([]);
   const [mergeFrom, setMergeFrom] = useState(null);
 
   const refresh = useCallback(() => {
     api.people().then(setPeople).catch(() => {});
-    api.facesStatus().then(setFaceStatus).catch(() => {});
+    api.facesStatus().then(setFs).catch(() => {});
   }, []);
 
   useEffect(() => {
     refresh();
-    const t = setInterval(() => api.facesStatus().then(setFaceStatus).catch(() => {}), 3000);
+    const t = setInterval(() => api.facesStatus().then(setFs).catch(() => {}), 2500);
     return () => clearInterval(t);
   }, [refresh]);
 
-  useEffect(() => {
-    if (selected) api.personFaces(selected.id).then(setFaces).catch(() => setFaces([]));
-  }, [selected]);
+  const prog = fs?.progress;
+  const running = prog?.running;
+  const named = people.filter((p) => !p.auto);
+  const groups = people.filter((p) => p.auto);
 
-  const prog = faceStatus?.progress;
+  const detect = () => api.detectFaces(null).then(() => notify("Detection started")).catch((e) => notify(e.message));
+  const recognize = () =>
+    api.recognizeFaces().then((r) => { notify(`${r.suggested} new suggestions`); refresh(); }).catch((e) => notify(e.message));
 
-  const detect = async () => {
-    try {
-      await api.detectFaces(null);
-      notify("Face detection started");
-    } catch (e) {
-      notify(e.message);
-    }
-  };
-
-  const rename = async (p) => {
-    const name = prompt("Rename person:", p.name);
+  const rename = async (p, initial) => {
+    const name = prompt(p.auto ? "Name this person:" : "Rename:", initial ?? (p.auto ? "" : p.name));
     if (name && name !== p.name) {
       await api.renamePerson(p.id, name);
       refresh();
-      if (selected?.id === p.id) setSelected({ ...p, name });
+      if (selected?.id === p.id) setSelected({ ...p, name, auto: 0 });
     }
   };
 
@@ -55,41 +48,63 @@ export default function PeoplePanel() {
     }
   };
 
+  if (selected) {
+    return (
+      <PersonDetail
+        person={selected}
+        onBack={() => setSelected(null)}
+        onChanged={() => {
+          refresh();
+          api.people().then((ps) => {
+            const p = ps.find((x) => x.id === selected.id);
+            if (p) setSelected(p);
+            else setSelected(null);
+          });
+        }}
+        onRename={() => rename(selected)}
+        onMerge={() => setMergeFrom(selected)}
+        onDelete={async () => {
+          if (confirm(`Delete "${selected.name}"? Photos are kept.`)) {
+            await api.deletePerson(selected.id);
+            setSelected(null);
+            refresh();
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <div className="content">
       <div className="card">
         <div className="row">
           <b>Face recognition</b>
-          {faceStatus && (
-            <span className="pill">
-              {faceStatus.engine_available ? "engine ready" : "engine not installed"}
-            </span>
-          )}
+          <span className="pill">{fs?.engine_available ? "engine ready" : "engine not installed"}</span>
           <div className="spacer" />
-          <button
-            onClick={detect}
-            disabled={!faceStatus?.engine_available || prog?.running}
-          >
-            {prog?.running
-              ? `${prog.phase} ${prog.done}/${prog.total}`
-              : "Detect faces"}
+          <button onClick={detect} disabled={!fs?.engine_available || running}>
+            {running ? `${prog.phase} ${prog.done}/${prog.total}` : "Detect faces"}
           </button>
-          <button onClick={() => api.clusterFaces().then(refresh)}>Re-cluster</button>
+          <button onClick={recognize} disabled={!fs?.engine_available || running}>
+            Recognise
+          </button>
+          <button onClick={() => api.clusterFaces().then(refresh)} disabled={running}>
+            Re-group
+          </button>
         </div>
-        {!faceStatus?.engine_available && (
+        {!fs?.engine_available && (
           <p className="muted">
-            Automatic face detection needs the optional engine:{" "}
-            <code>pip install -r requirements-faces.txt</code>. You can still tag whole
-            photos with a person from the gallery and lightbox.
+            Install the engine: <code>pip install -r requirements-faces.txt</code> (or
+            deploy with <code>-WithFaces</code>). Photo-level people tags still work.
           </p>
         )}
-        {faceStatus?.engine_available && (
+        {fs?.engine_available && (
           <p className="muted">
-            {faceStatus.faces} faces detected · {faceStatus.named_faces} named ·{" "}
-            {faceStatus.photos_pending} photos pending
+            {fs.faces} faces · {fs.named_faces} named · {fs.suggested_faces} suggested ·{" "}
+            {fs.unnamed_groups} unnamed groups · {fs.unassigned_faces} loose ·{" "}
+            {fs.photos_pending} photos pending
           </p>
         )}
-        {prog?.running && (
+        {running && (
           <div className="progress">
             <div style={{ width: `${(100 * prog.done) / Math.max(prog.total, 1)}%` }} />
           </div>
@@ -98,98 +113,144 @@ export default function PeoplePanel() {
 
       {mergeFrom && (
         <div className="card">
-          Merging <b>{mergeFrom.name}</b> into… pick a target person below, or{" "}
+          Merging <b>{mergeFrom.name}</b> into… click a target person below, or{" "}
           <button onClick={() => setMergeFrom(null)}>cancel</button>
         </div>
       )}
 
-      {!selected && (
-        <>
-          <div className="row" style={{ margin: "8px 0" }}>
-            <button
-              onClick={async () => {
-                const name = prompt("New person name:");
-                if (name) {
-                  await api.createPerson(name);
-                  refresh();
-                }
-              }}
-            >
-              + Add person
-            </button>
-          </div>
-          <div className="people-grid">
-            {people.map((p) => (
-              <div
-                key={p.id}
-                className="person"
-                onClick={() => (mergeFrom ? doMerge(p) : setSelected(p))}
-              >
-                {p.cover_face ? (
-                  <img className="face" src={faceCropUrl(p.cover_face)} alt={p.name} />
-                ) : (
-                  <div className="face" />
-                )}
-                <div className="label">
-                  <b>{p.name}</b>
-                  <span className="muted">
-                    {p.photo_count} photo{p.photo_count === 1 ? "" : "s"}
-                    {p.auto ? " · auto" : ""}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-          {people.length === 0 && <p className="muted">No people yet.</p>}
-        </>
-      )}
-
-      {selected && (
-        <PersonDetail
-          person={selected}
-          faces={faces}
-          onBack={() => setSelected(null)}
-          onRename={() => rename(selected)}
-          onMerge={() => setMergeFrom(selected)}
-          onDelete={async () => {
-            if (confirm(`Delete person "${selected.name}"? Photos are kept.`)) {
-              await api.deletePerson(selected.id);
-              setSelected(null);
+      <div className="row" style={{ margin: "4px 0 10px" }}>
+        <h3 style={{ margin: 0 }}>People</h3>
+        <div className="spacer" />
+        <button
+          onClick={async () => {
+            const name = prompt("New person name:");
+            if (name) {
+              await api.createPerson(name);
               refresh();
             }
           }}
-        />
+        >
+          + Add person
+        </button>
+      </div>
+      <div className="people-grid">
+        {named.map((p) => (
+          <PersonCard
+            key={p.id}
+            p={p}
+            onClick={() => (mergeFrom ? doMerge(p) : setSelected(p))}
+          />
+        ))}
+      </div>
+      {named.length === 0 && <p className="muted">No named people yet.</p>}
+
+      {groups.length > 0 && (
+        <>
+          <h3 style={{ margin: "22px 0 10px" }}>
+            Unnamed groups <span className="muted">— click to name</span>
+          </h3>
+          <div className="people-grid">
+            {groups.map((p) => (
+              <PersonCard key={p.id} p={p} onClick={() => rename(p)} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function PersonDetail({ person, faces, onBack, onRename, onMerge, onDelete }) {
+function PersonCard({ p, onClick }) {
   return (
-    <div>
+    <div className="person" onClick={onClick}>
+      {p.cover_face ? (
+        <img className="face" src={faceCropUrl(p.cover_face)} alt={p.name} />
+      ) : (
+        <div className="face" />
+      )}
+      <div className="label">
+        <b>{p.name}</b>
+        <span className="muted">
+          {p.photo_count} photo{p.photo_count === 1 ? "" : "s"}
+          {p.suggested_count ? ` · ${p.suggested_count} to review` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PersonDetail({ person, onBack, onChanged, onRename, onMerge, onDelete }) {
+  const notify = useToast();
+  const [tab, setTab] = useState(person.suggested_count ? "suggested" : "confirmed");
+  const [faces, setFaces] = useState([]);
+
+  const load = useCallback(() => {
+    api.personFaces(person.id, tab).then(setFaces).catch(() => setFaces([]));
+  }, [person.id, tab]);
+  useEffect(load, [load]);
+
+  const act = async (fn, f) => {
+    await fn(f.id);
+    setFaces((xs) => xs.filter((x) => x.id !== f.id));
+    onChanged();
+  };
+
+  return (
+    <div className="content">
       <div className="row" style={{ marginBottom: 12 }}>
         <button onClick={onBack}>← People</button>
         <h2 style={{ margin: 0 }}>{person.name}</h2>
+        {person.auto ? <span className="pill">unnamed group</span> : null}
         <div className="spacer" />
-        <button onClick={onRename}>Rename</button>
+        <button onClick={onRename}>{person.auto ? "Name" : "Rename"}</button>
         <button onClick={onMerge}>Merge…</button>
-        <button className="danger" onClick={onDelete}>
-          Delete
-        </button>
+        <button className="danger" onClick={onDelete}>Delete</button>
       </div>
-      <p className="muted">
-        {person.face_count} detected face{person.face_count === 1 ? "" : "s"}
-      </p>
+
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        {[
+          ["confirmed", `Confirmed (${person.confirmed_count})`],
+          ["suggested", `To review (${person.suggested_count})`],
+          ["all", "All"],
+        ].map(([k, label]) => (
+          <button key={k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid">
         {faces.map((f) => (
-          <div key={f.id} className="tile">
+          <div key={f.id} className="tile face-tile">
             <img src={faceCropUrl(f.id)} alt="" />
+            {f.similarity != null && (
+              <span className="badge">{Math.round(f.similarity * 100)}%</span>
+            )}
+            {!f.confirmed && (
+              <div className="face-actions">
+                <button
+                  title="Yes, this is them"
+                  onClick={() => act(api.confirmFace, f)}
+                >
+                  ✓
+                </button>
+                <button
+                  className="danger"
+                  title="Not this person"
+                  onClick={() => act(api.rejectFace, f)}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
       {faces.length === 0 && (
         <p className="muted">
-          No detected faces linked yet — this person may only have photo-level tags.
+          {tab === "suggested"
+            ? "Nothing to review. Run Recognise to find more, or Detect faces on new photos."
+            : "No faces here yet."}
         </p>
       )}
     </div>

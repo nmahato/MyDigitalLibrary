@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS faces (
     det_score   REAL,
     embedding   BLOB,
     cluster_id  INTEGER,
-    confirmed   INTEGER DEFAULT 0
+    confirmed   INTEGER DEFAULT 0,   -- 1 = user-confirmed, 0 = suggestion
+    similarity  REAL                 -- cosine to the person centroid, for suggestions
 );
 CREATE INDEX IF NOT EXISTS idx_faces_photo   ON faces(photo_id);
 CREATE INDEX IF NOT EXISTS idx_faces_person  ON faces(person_id);
@@ -106,9 +107,20 @@ CREATE INDEX IF NOT EXISTS idx_photo_tags_photo ON photo_tags(photo_id);
 """
 
 
+# Additive column migrations for DBs created by an earlier version.
+_MIGRATIONS = [
+    "ALTER TABLE faces ADD COLUMN similarity REAL",
+]
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        for stmt in _MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 @contextmanager

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, downloadUrl, fileUrl, humanBytes } from "../api.js";
 import { useToast } from "../App.jsx";
+import FaceOverlay from "./FaceOverlay.jsx";
 
 export default function Lightbox({
   items,
@@ -16,6 +17,7 @@ export default function Lightbox({
   const notify = useToast();
   const item = items[index];
   const [detail, setDetail] = useState(null);
+  const [showFaces, setShowFaces] = useState(true);
 
   const reload = () => item && api.photo(item.id).then(setDetail).catch(() => {});
   useEffect(() => {
@@ -91,6 +93,15 @@ export default function Lightbox({
           {index + 1} / {items.length}
         </span>
         <div className="spacer" />
+        {item.media_type === "image" && detail?.faces?.length > 0 && (
+          <button
+            className={showFaces ? "active" : ""}
+            onClick={() => setShowFaces((v) => !v)}
+            title="Toggle face boxes"
+          >
+            🙂 {detail.faces.length}
+          </button>
+        )}
         <a href={downloadUrl(item.id)}>Download</a>
         <button onClick={addHashtag}># Tag</button>
         <button onClick={addToAlbum}>+ Album</button>
@@ -112,7 +123,17 @@ export default function Lightbox({
         {item.media_type === "video" ? (
           <video src={fileUrl(item.id)} controls autoPlay />
         ) : (
-          <img src={fileUrl(item.id)} alt={item.filename} />
+          <div className="stage-img">
+            <img src={fileUrl(item.id)} alt={item.filename} />
+            {showFaces && detail?.faces?.length > 0 && (
+              <FaceOverlay
+                photo={item}
+                faces={detail.faces}
+                people={people}
+                onChanged={reload}
+              />
+            )}
+          </div>
         )}
         <button className="nav next" onClick={() => go(1)}>
           ›
