@@ -61,10 +61,6 @@ jobs:
           set -euo pipefail
 
           version="${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            version="${GITHUB_REF#refs/tags/}"
-          fi
-          version="${version//\//-}"
 
           bundle_name="PhotoLibrary-${version}"
           bundle_root="${RUNNER_TEMP}/${bundle_name}"
@@ -117,8 +113,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag --generate-notes
+          if ! gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag --generate-notes release/*.zip 2>create.log; then
+            if grep -q "already exists" create.log; then
+              gh release upload "${GITHUB_REF_NAME}" release/*.zip --repo "${GITHUB_REPOSITORY}" --clobber
+            else
+              cat create.log >&2
+              exit 1
+            fi
           fi
-
-          gh release upload "${GITHUB_REF_NAME}" release/*.zip --repo "${GITHUB_REPOSITORY}" --clobber
