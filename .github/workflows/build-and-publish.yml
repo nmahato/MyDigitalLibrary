@@ -60,6 +60,7 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
             version="${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"
           fi
+          version="${version//\//-}"
 
           bundle_name="PhotoLibrary-${version}"
           bundle_root="${RUNNER_TEMP}/${bundle_name}"
