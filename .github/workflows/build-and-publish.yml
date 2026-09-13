@@ -58,7 +58,7 @@ jobs:
 
           version="${GITHUB_REF_NAME}"
           if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
-            version="${GITHUB_SHA::7}"
+            version="${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"
           fi
 
           bundle_name="PhotoLibrary-${version}"
@@ -71,6 +71,7 @@ jobs:
           cp frontend/package.json frontend/package-lock.json "${bundle_root}/frontend/"
           cp README.md "${bundle_root}/"
 
+          rm -rf "${bundle_root}/backend/.venv"
           find "${bundle_root}/backend" -type d -name "__pycache__" -prune -exec rm -rf {} +
           find "${bundle_root}/backend" -type f -name "*.pyc" -delete
 
