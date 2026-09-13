@@ -61,6 +61,18 @@ The script is idempotent. It:
    - **modify on the photo library** (import/convert/delete need to write there)
 8. Restarts the pool and checks `http://localhost:<port>/api/health`.
 
+## GitHub build output
+
+The repository's **Build and publish** workflow produces a ZIP bundle that
+already includes `frontend/dist`, the backend, and the IIS deployment files.
+Download that artifact from any successful workflow run, or from the GitHub
+Release that is created automatically for tags named `v*`.
+
+After extracting the ZIP on the target machine, run `deploy\Deploy-ToIIS.ps1`
+from the extracted folder. A normal deploy does not need Node.js because the
+frontend assets are already built; use `-Build` only when you want the script
+to rebuild dependencies from source on the target machine.
+
 After pulling new code:
 
 ```powershell

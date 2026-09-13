@@ -1,0 +1,114 @@
+name: Build and publish
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      bundle_name: ${{ steps.bundle.outputs.bundle_name }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install -r requirements.txt
+
+      - name: Verify backend application import
+        working-directory: backend
+        run: python -c "from app.main import app; print(app.title)"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Assemble release bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            version="${GITHUB_SHA::7}"
+          fi
+
+          bundle_name="PhotoLibrary-${version}"
+          bundle_root="${RUNNER_TEMP}/${bundle_name}"
+
+          mkdir -p "${bundle_root}/frontend"
+          cp -R backend "${bundle_root}/"
+          cp -R deploy "${bundle_root}/"
+          cp -R frontend/dist "${bundle_root}/frontend/"
+          cp frontend/package.json frontend/package-lock.json "${bundle_root}/frontend/"
+          cp README.md "${bundle_root}/"
+
+          find "${bundle_root}/backend" -type d -name "__pycache__" -prune -exec rm -rf {} +
+          find "${bundle_root}/backend" -type f -name "*.pyc" -delete
+
+          (
+            cd "${RUNNER_TEMP}"
+            zip -rq "${bundle_name}.zip" "${bundle_name}"
+          )
+
+          echo "bundle_name=${bundle_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.bundle.outputs.bundle_name }}
+          path: ${{ runner.temp }}/${{ steps.bundle.outputs.bundle_name }}.zip
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.bundle_name }}
+          path: release
+
+      - name: Publish GitHub release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes
+          fi
+
+          gh release upload "${GITHUB_REF_NAME}" release/*.zip --clobber

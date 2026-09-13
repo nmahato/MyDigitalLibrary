@@ -64,6 +64,15 @@ npm run dev             # http://127.0.0.1:5173  (proxies /api to the backend)
 For a single-process deployment: `npm run build`, then the backend serves
 `frontend/dist` at `http://127.0.0.1:8077`.
 
+## Automation
+
+GitHub Actions runs the **Build and publish** workflow on pull requests and on
+pushes to `master`. It verifies the backend imports, builds the frontend, and
+uploads a deployable ZIP bundle as a workflow artifact.
+
+Pushing a tag named `v*` (for example `v1.0.0`) runs the same build and then
+publishes that ZIP bundle to a GitHub Release for the tag.
+
 ## First run
 
 1. Start the backend, then the frontend, open http://127.0.0.1:5173.
