@@ -257,6 +257,56 @@ def _greedy_cluster(vecs, sim_threshold, min_samples):
     return np.array(labels)
 
 
+def find_similar_faces(face_id: int, threshold: float = 0.40, limit: int = 100) -> list[dict]:
+    """Find all faces in the database similar to a target face_id ordered by similarity descending."""
+    target = people_repo.get_face(face_id)
+    if not target or not target["embedding"]:
+        return []
+
+    target_vec = _norm(_buf(target["embedding"]))
+    all_faces = people_repo.load_faces_with_embeddings()
+    if not all_faces:
+        return []
+
+    vecs = np.vstack([_norm(_buf(f["embedding"])) for f in all_faces])
+    sims = vecs @ target_vec
+
+    results = []
+    for idx, f in enumerate(all_faces):
+        sim = float(sims[idx])
+        if sim >= threshold:
+            results.append({
+                "id": f["id"],
+                "photo_id": f["photo_id"],
+                "similarity": round(sim, 4),
+                "confirmed": f["confirmed"],
+                "person_id": f["person_id"],
+                "person_name": f["person_name"],
+                "photo_filename": f["photo_filename"],
+                "photo_rel_path": f["photo_rel_path"],
+                "bbox_x": f["bbox_x"],
+                "bbox_y": f["bbox_y"],
+                "bbox_w": f["bbox_w"],
+                "bbox_h": f["bbox_h"],
+            })
+
+    results.sort(key=lambda x: x["similarity"], reverse=True)
+    return results[:limit]
+
+
+def find_similar_face_photo_ids(face_id: int, threshold: float = 0.40) -> list[int]:
+    """Return distinct photo IDs that contain a face similar to face_id."""
+    similar = find_similar_faces(face_id, threshold=threshold, limit=500)
+    seen = set()
+    photo_ids = []
+    for f in similar:
+        pid = f["photo_id"]
+        if pid not in seen:
+            seen.add(pid)
+            photo_ids.append(pid)
+    return photo_ids
+
+
 def crop_face(face_id: int):
     f = people_repo.face_with_photo(face_id)
     if not f:

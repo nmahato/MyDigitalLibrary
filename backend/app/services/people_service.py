@@ -58,6 +58,13 @@ def face_crop(face_id: int):
     return img
 
 
+def find_similar_faces(face_id: int, threshold: float = 0.40, limit: int = 100) -> list[dict]:
+    face = people_repo.get_face(face_id)
+    if not face:
+        raise NotFound("face not found")
+    return face_engine.find_similar_faces(face_id, threshold=threshold, limit=limit)
+
+
 def assign_face(face_id: int, *, person_id: int | None, name: str | None) -> dict:
     face = people_repo.get_face(face_id)
     if not face:

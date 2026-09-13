@@ -62,18 +62,20 @@ def _image_thumb(src: str, dst: Path):
 
 
 def _video_thumb(src: str, dst: Path):
-    # Extract a frame to JPEG with ffmpeg, then let PIL make the webp thumb.
-    # (ffmpeg's native .webp output uses the animated-webp encoder, which fails
-    #  with "WebPAnimEncoderAssemble ... Cannot allocate memory" on many files.)
-    tmp = dst.with_name(dst.stem + ".frame.jpg")
+    # Extract a frame with ffmpeg to PNG (handles 10-bit HEVC, HDR, multiple audio/metadata streams),
+    # then let PIL downscale and save to webp.
+    tmp = dst.with_name(dst.stem + ".frame.png")
     base = [FFMPEG, "-y", "-loglevel", "error", "-threads", "1"]
-    tail = ["-frames:v", "1", "-an", "-sn", "-vf",
-            f"scale='min({THUMB_SIZE},iw)':-2", "-q:v", "3", str(tmp)]
+    tail = ["-map", "0:v:0", "-frames:v", "1", "-vf", f"scale=min({THUMB_SIZE}\\,iw):-2", str(tmp)]
     try:
         subprocess.run(base + ["-ss", "1", "-i", src] + tail,
                        capture_output=True, timeout=60)
-        if not _good(tmp):  # very short clip: grab the first frame
-            subprocess.run(base + ["-i", src] + tail, capture_output=True, timeout=60)
+        if not _good(tmp):  # very short clip or seeking failed: grab the first frame at start
+            subprocess.run(base + ["-ss", "0", "-i", src] + tail,
+                           capture_output=True, timeout=60)
+        if not _good(tmp):
+            subprocess.run(base + ["-i", src] + tail,
+                           capture_output=True, timeout=60)
         if _good(tmp):
             _image_thumb(str(tmp), dst)
     finally:

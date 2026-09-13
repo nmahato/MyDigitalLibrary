@@ -32,6 +32,19 @@ def _build_where(f) -> tuple[str, list, str, list]:
     where, params = ["p.missing=0"], []
     if f.person_id:
         where.append("(fa.id IS NOT NULL OR pp.person_id IS NOT NULL)")
+    if f.face_id:
+        where.append("p.id IN (SELECT photo_id FROM faces WHERE id=?)")
+        params.append(f.face_id)
+    if f.similar_face_id:
+        from ..services.face_engine import find_similar_face_photo_ids
+        sim_thresh = f.min_similarity if f.min_similarity is not None else 0.42
+        photo_ids = find_similar_face_photo_ids(f.similar_face_id, threshold=sim_thresh)
+        if photo_ids:
+            marks = ",".join("?" for _ in photo_ids)
+            where.append(f"p.id IN ({marks})")
+            params += photo_ids
+        else:
+            where.append("1=0")
     if f.q:
         where.append("(p.filename LIKE ? OR p.location LIKE ? OR p.rel_path LIKE ?)")
         params += [f"%{f.q}%"] * 3

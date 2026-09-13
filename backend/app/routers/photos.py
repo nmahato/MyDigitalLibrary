@@ -21,6 +21,9 @@ def filter_params(
     location: str | None = None,
     camera: str | None = None,
     person_id: int | None = None,
+    face_id: int | None = None,
+    similar_face_id: int | None = None,
+    min_similarity: float | None = None,
     album_id: int | None = None,
     tag: str | None = None,
     year: int | None = None,
@@ -33,9 +36,11 @@ def filter_params(
 ) -> PhotoFilters:
     return PhotoFilters(
         q=q, date_from=date_from, date_to=date_to, media_type=media_type,
-        location=location, camera=camera, person_id=person_id, album_id=album_id,
-        tag=tag, year=year, folder=folder, duplicates_only=duplicates_only,
-        sort=sort, order=order, limit=limit, offset=offset,
+        location=location, camera=camera, person_id=person_id,
+        face_id=face_id, similar_face_id=similar_face_id, min_similarity=min_similarity,
+        album_id=album_id, tag=tag, year=year, folder=folder,
+        duplicates_only=duplicates_only, sort=sort, order=order,
+        limit=limit, offset=offset,
     )
 
 

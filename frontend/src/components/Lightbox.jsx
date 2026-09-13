@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, downloadUrl, fileUrl, humanBytes } from "../api.js";
 import { useToast } from "../App.jsx";
 import FaceOverlay from "./FaceOverlay.jsx";
@@ -18,6 +18,7 @@ export default function Lightbox({
   const item = items[index];
   const [detail, setDetail] = useState(null);
   const [showFaces, setShowFaces] = useState(true);
+  const touchStart = useRef(null);
 
   const reload = () => item && api.photo(item.id).then(setDetail).catch(() => {});
   useEffect(() => {
@@ -25,6 +26,9 @@ export default function Lightbox({
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
+
+  const hasPrev = index > 0;
+  const hasNext = index < items.length - 1;
 
   const go = (delta) => {
     const next = index + delta;
@@ -35,14 +39,39 @@ export default function Lightbox({
 
   useEffect(() => {
     const h = (e) => {
-      if (e.target.tagName === "INPUT") return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       if (e.key === "Escape") onClose();
-      if (e.key === "ArrowLeft") go(-1);
-      if (e.key === "ArrowRight") go(1);
+      if (e.key === "ArrowLeft" || e.key === "PageUp") go(-1);
+      if (e.key === "ArrowRight" || e.key === "PageDown") go(1);
+      if (e.key === "Home") {
+        onIndex(0);
+      }
+      if (e.key === "End") {
+        if (items.length - 1 >= items.length - 3) onNeedMore?.();
+        onIndex(items.length - 1);
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   });
+
+  // Touch swipe handling for mobile / touchscreen preview
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches.length === 1) {
+      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!touchStart.current || !e.changedTouches || e.changedTouches.length === 0) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current.x;
+    const dy = e.changedTouches[0].clientY - touchStart.current.y;
+    touchStart.current = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx > 0) go(-1);
+      else go(1);
+    }
+  };
 
   if (!item) return null;
 
@@ -87,11 +116,29 @@ export default function Lightbox({
   return (
     <div className="lightbox">
       <div className="lb-top">
-        <button onClick={onClose}>✕ Close</button>
-        <span>{item.filename}</span>
-        <span className="muted">
-          {index + 1} / {items.length}
-        </span>
+        <button onClick={onClose} title="Close (Esc)">✕ Close</button>
+        <div className="lb-nav-group">
+          <button
+            className="lb-nav-btn"
+            disabled={!hasPrev}
+            onClick={() => go(-1)}
+            title="Previous (Left Arrow / PageUp)"
+          >
+            ‹ Prev
+          </button>
+          <span className="lb-counter">
+            {index + 1} / {items.length}
+          </span>
+          <button
+            className="lb-nav-btn"
+            disabled={!hasNext}
+            onClick={() => go(1)}
+            title="Next (Right Arrow / PageDown)"
+          >
+            Next ›
+          </button>
+        </div>
+        <span className="lb-filename" title={item.filename}>{item.filename}</span>
         <div className="spacer" />
         {item.media_type === "image" && detail?.faces?.length > 0 && (
           <button
@@ -102,7 +149,7 @@ export default function Lightbox({
             🙂 {detail.faces.length}
           </button>
         )}
-        <a href={downloadUrl(item.id)}>Download</a>
+        <a href={downloadUrl(item.id)} className="button-like">Download</a>
         <button onClick={addHashtag}># Tag</button>
         <button onClick={addToAlbum}>+ Album</button>
         <button onClick={tagPerson}>Person</button>
@@ -116,8 +163,18 @@ export default function Lightbox({
         </button>
       </div>
 
-      <div className="stage">
-        <button className="nav prev" onClick={() => go(-1)}>
+      <div
+        className="stage"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <button
+          className="nav prev"
+          disabled={!hasPrev}
+          onClick={() => go(-1)}
+          title="Previous (Left Arrow)"
+          aria-label="Previous"
+        >
           ‹
         </button>
         {item.media_type === "video" ? (
@@ -135,7 +192,13 @@ export default function Lightbox({
             )}
           </div>
         )}
-        <button className="nav next" onClick={() => go(1)}>
+        <button
+          className="nav next"
+          disabled={!hasNext}
+          onClick={() => go(1)}
+          title="Next (Right Arrow)"
+          aria-label="Next"
+        >
           ›
         </button>
       </div>

@@ -12,6 +12,9 @@ class PhotoFilters(BaseModel):
     location: str | None = None
     camera: str | None = None
     person_id: int | None = None
+    face_id: int | None = None
+    similar_face_id: int | None = None
+    min_similarity: float | None = None
     album_id: int | None = None
     tag: str | None = None
     year: int | None = None
@@ -182,6 +185,21 @@ class PersonCreate(BaseModel):
 class MergeRequest(BaseModel):
     source_id: int
     target_id: int
+
+
+class SimilarFace(BaseModel):
+    id: int
+    photo_id: int
+    similarity: float
+    confirmed: int = 0
+    person_id: int | None = None
+    person_name: str | None = None
+    photo_filename: str | None = None
+    photo_rel_path: str | None = None
+    bbox_x: int | None = None
+    bbox_y: int | None = None
+    bbox_w: int | None = None
+    bbox_h: int | None = None
 
 
 class FaceAssign(BaseModel):

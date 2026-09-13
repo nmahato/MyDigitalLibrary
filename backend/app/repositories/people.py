@@ -130,6 +130,19 @@ def load_embeddings() -> list:
             "WHERE embedding IS NOT NULL").fetchall()
 
 
+def load_faces_with_embeddings() -> list:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT f.id, f.photo_id, f.person_id, f.confirmed, f.embedding, "
+            "f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h, pe.name AS person_name, "
+            "p.filename AS photo_filename, p.rel_path AS photo_rel_path "
+            "FROM faces f "
+            "JOIN photos p ON p.id=f.photo_id "
+            "LEFT JOIN people pe ON pe.id=f.person_id "
+            "WHERE f.embedding IS NOT NULL AND p.missing=0"
+        ).fetchall()
+
+
 def unassigned_embeddings() -> list:
     with get_conn() as conn:
         return conn.execute(

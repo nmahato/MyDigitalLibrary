@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from ..schemas import (
     DetectRequest, FaceAssign, FaceEngineStatus, MergeRequest, PersonCreate,
-    PersonOut, TagRequest,
+    PersonOut, SimilarFace, TagRequest,
 )
 from ..services import people_service
 
@@ -52,6 +52,11 @@ def face_crop(face_id: int):
     img.convert("RGB").save(buf, "JPEG", quality=85)
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/jpeg")
+
+
+@router.get("/faces/{face_id}/similar", response_model=list[SimilarFace])
+def similar_faces(face_id: int, threshold: float = 0.40, limit: int = 100):
+    return people_service.find_similar_faces(face_id, threshold=threshold, limit=limit)
 
 
 @router.post("/faces/{face_id}/assign")

@@ -34,7 +34,7 @@ param(
   [string]$AppPoolName     = "PhotoLibrary",
   [int]   $Port            = 9090,
   [string]$PhotoLibrary    = "D:\PhotoLibrary",
-  [string]$ProjectRoot     = (Split-Path -Parent $PSScriptRoot),
+  [string]$ProjectRoot     = "",
   [ValidateSet("LocalSystem","NetworkService","LocalService","ApplicationPoolIdentity")]
   [string]$PoolIdentity    = "LocalSystem",
   [string]$PoolUser        = "",          # e.g. "MACHINE\me" — pool runs as this account
@@ -45,6 +45,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $ProjectRoot) {
+  $ProjectRoot = Split-Path -Parent $PSScriptRoot
+}
 
 function Assert-Admin {
   $id = [Security.Principal.WindowsIdentity]::GetCurrent()
