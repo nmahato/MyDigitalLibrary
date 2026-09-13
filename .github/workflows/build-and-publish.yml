@@ -38,9 +38,13 @@ jobs:
         working-directory: backend
         run: python -m pip install -r requirements.txt
 
-      - name: Verify backend application import
+      - name: Verify backend modules compile
         working-directory: backend
-        run: python -c "from app.main import app; print(app.title)"
+        run: python -m compileall app run.py tests
+
+      - name: Run backend smoke tests
+        working-directory: backend
+        run: python -m unittest discover -s tests -p "test_*.py"
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -72,7 +76,11 @@ jobs:
           cp frontend/package.json frontend/package-lock.json "${bundle_root}/frontend/"
           cp README.md "${bundle_root}/"
 
-          rm -rf "${bundle_root}/backend/.venv"
+          rm -rf \
+            "${bundle_root}/backend/.venv" \
+            "${bundle_root}/backend/venv" \
+            "${bundle_root}/backend/.env" \
+            "${bundle_root}/backend/env"
           find "${bundle_root}/backend" -type d -name "__pycache__" -prune -exec rm -rf {} +
           find "${bundle_root}/backend" -type f -name "*.pyc" -delete
 
